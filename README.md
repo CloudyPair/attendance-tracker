@@ -4,4 +4,5 @@
 
 ## Запуск
 
-Запуск: см. раздел 7 в kpo_project.md
+Запуск (Linux): 
+python3 -m venv venv && source venv/bin/activate && pip install -r requirements-dev.txt && python manage.py migrate && python manage.py runserver
