@@ -1,0 +1,31 @@
+@startuml SequenceTelegramLink
+title Последовательность: привязка Telegram (одноразовая ссылка)
+
+autonumber
+actor "Студент" as S
+participant "Веб-интерфейс" as UI
+participant "Бэкенд\n(TelegramLinkService)" as API
+participant "Telegram-бот" as Bot
+database "БД" as DB
+
+S -> UI : войти на сайт → «Привязать Telegram»
+UI -> API : create_link_token(student)
+API -> DB : INSERT LinkToken(token, expires_at = now + TTL)
+API --> UI : ссылка t.me/<bot>?start=<token>
+UI --> S : показать ссылку / кнопку
+
+S -> Bot : открыть ссылку, нажать «Start»
+Bot -> API : bind(token, chat_id)
+API -> DB : найти LinkToken по token
+alt токен не найден, просрочен или уже использован
+  API --> Bot : ошибка
+  Bot --> S : «Ссылка недействительна, получите новую на сайте»
+else токен действителен
+  API -> DB : INSERT TelegramLink(chat_id, linked_at)
+  API -> DB : UPDATE LinkToken SET used_at = now
+  API --> Bot : студент, роль в группе
+  Bot --> S : «Аккаунт привязан. Ваша роль: студент / староста»
+end
+
+
+@enduml

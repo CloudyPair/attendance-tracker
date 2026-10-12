@@ -1,0 +1,71 @@
+@startuml SequenceStatisticsExport
+title Последовательность: статистика преподавателя, порог и экспорт
+
+autonumber
+actor "Преподаватель" as T
+participant "Веб-интерфейс\n(WebViews)" as UI
+participant "StatisticsService" as ST
+participant "CourseService" as CS
+participant "AccessPolicy" as AP
+participant "AttendanceCalculator" as C
+participant "IReportExporter\n(Xlsx / Csv / Pdf)" as EX
+database "БД" as DB
+
+== Просмотр ==
+T -> UI : выбрать предмет, группу, период
+UI -> ST : for_course(teacher, course, from, to)
+ST -> AP : can_view_course(teacher, course)
+AP --> ST : разрешено / запрещено
+alt курс не принадлежит преподавателю
+  ST --> UI : ошибка доступа
+  UI --> T : «Нет доступа»
+else доступ есть
+  ST -> DB : занятия курса за период, записи,\nпричины, неотмеченные занятия
+  DB --> ST
+  loop по каждому студенту
+    ST -> C : Calculate(lessons, records, threshold, now)
+    C --> ST : AttendanceStats по типам и общая (level)
+  end
+  ST --> UI : CourseReport
+  UI --> T : таблица: студент, проценты,\nпричины, неотмеченные занятия
+end
+
+== История отметки ==
+opt открыть историю
+  T -> UI : выбрать отметку студента
+  UI -> ST : get_record_history(teacher, record_id)
+  ST -> AP : can_view_course(teacher, course записи)
+  AP --> ST : разрешено
+  ST -> DB : выбрать AttendanceChange по записи
+  DB --> ST
+  ST --> UI : кто, когда, что менял, причина
+  UI --> T : история изменений
+end
+
+== Порог ==
+opt изменить порог
+  T -> UI : ввести новый порог, %
+  UI -> CS : set_threshold(teacher, course_id, percent)
+  CS -> AP : can_set_threshold(teacher, course)
+  AP --> CS : разрешено / запрещено
+  alt нет права или порог вне диапазона 0..100
+    CS --> UI : ошибка
+    UI --> T : сообщение об ошибке
+  else
+    CS -> DB : UPDATE Course.threshold_percent
+    CS --> UI : ок
+    UI --> T : статистика пересчитана с новым порогом
+  end
+end
+
+== Экспорт ==
+opt экспортировать
+  T -> UI : формат: Excel / CSV / PDF
+  UI -> ST : for_course(teacher, course, from, to)
+  ST --> UI : CourseReport
+  UI -> EX : export(report)
+  EX --> UI : byte[]
+  UI --> T : скачивание файла
+end
+
+@enduml

@@ -1,0 +1,40 @@
+@startuml SequenceScheduleImport
+title Последовательность: разовый импорт расписания из .ics
+
+autonumber
+actor "Администратор" as A
+participant "Парсер расписания МИЭТ\n(schedule_parser)" as P
+participant "ScheduleImporter\n(команда импорта)" as I
+database "БД" as DB
+
+A -> P : запустить парсер в студенческом режиме\n(группа, дата начала семестра)
+P --> A : файл .ics на 18 недель
+
+A -> I : import_schedule(group, file.ics)
+I -> DB : у группы уже есть занятия?
+alt занятия уже импортированы
+  I --> A : отказ: импорт разовый, повтор не поддерживается
+else первичная настройка
+  I -> I : разобрать календарь,\nразвернуть повторяющиеся события в отдельные вхождения
+  I -> DB : BEGIN
+  loop по каждому вхождению
+    alt служебное событие парсера\n(тип и номер недели)
+      I -> I : пропустить (Skipped++)
+    else занятие
+      I -> I : разобрать: предмет, тип, время, аудитория, преподаватель
+      I -> DB : найти или создать Subject, Teacher
+      I -> DB : найти или создать Course (группа + предмет)
+      I -> DB : INSERT Lesson\n(external_uid = UID события + дата вхождения)
+    end
+  end
+  alt ошибка разбора (в т.ч. не определён тип занятия) или записи
+    I -> DB : ROLLBACK
+    I --> A : ImportResult с ошибками, ничего не сохранено
+  else успешно
+    I -> DB : COMMIT
+    I --> A : ImportResult (создано N занятий)
+  end
+end
+
+
+@enduml

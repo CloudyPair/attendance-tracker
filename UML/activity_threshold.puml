@@ -1,0 +1,36 @@
+@startuml ActivityThreshold
+title Диаграмма активностей: расчёт порога и иконки предупреждения
+
+start
+:Получить курс, студента, период, now;
+:total = число занятий курса (за семестр);
+:present = записи со статусом PRESENT;
+:missed = записи со статусом ABSENT;
+:marked = present + missed;
+:notMarked = начавшиеся занятия без PRESENT и ABSENT;
+:threshold = Course.threshold_percent (по умолчанию 50);
+
+
+if (marked > 0?) then (да)
+  :percent = present * 100 / marked (целочисленно);
+else (нет)
+  :percent = 100;
+endif
+
+:allowed = floor(total * (100 - threshold) / 100) - missed;
+
+if (allowed < 0?) then (да)
+  :Level = BELOW_THRESHOLD;
+  :Иконка крестик;
+elseif (allowed <= 1?) then (да)
+  :Level = WARNING;
+  :Иконка !;
+else (нет)
+  :Level = OK;
+  :Без иконки;
+endif
+
+:Вернуть AttendanceStats\n(percent, allowed, level, notMarked);
+stop
+
+@enduml

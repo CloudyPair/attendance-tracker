@@ -1,0 +1,23 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Демо ЛР2 (manage.py demo)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/manage.py",
+            "args": ["demo"],
+            "django": true,
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Сервер (manage.py runserver)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/manage.py",
+            "args": ["runserver"],
+            "django": true,
+            "console": "integratedTerminal"
+        }
+    ]
+}

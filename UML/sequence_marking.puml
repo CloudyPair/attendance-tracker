@@ -1,0 +1,76 @@
+@startuml SequenceMarking
+title Последовательность: отметка и правка посещаемости на сайте
+
+autonumber
+actor "Ответственный\n(староста / зам. / делегат)" as M
+participant "Веб-интерфейс\n(WebViews)" as UI
+participant "AttendanceService" as AS
+participant "AccessPolicy" as AP
+participant "StatisticsService" as ST
+participant "NotificationService" as NS
+database "БД" as DB
+participant "Telegram" as TG
+
+== Открытие занятия ==
+M -> UI : выбрать занятие из расписания на сегодня
+UI -> AS : open_lesson(user, lesson_id)
+AS -> AP : can_mark(user, lesson, now)
+AP -> DB : роль пользователя, активная замена
+DB --> AP
+AP --> AS : разрешено / запрещено
+
+alt нет права или окно отметки закрыто
+  AS --> UI : ошибка доступа
+  UI --> M : «Вы не можете отмечать это занятие»
+else есть право
+  AS -> DB : get_or_create AttendanceRecord\nдля каждого студента (NOT_MARKED)
+  DB --> AS : список записей
+  AS --> UI : записи со статусами
+  UI --> M : список группы
+end
+
+== Отметка ==
+opt быстрая отметка (на стороне интерфейса)
+  M -> UI : «Все присутствуют»
+  UI --> M : все в статусе PRESENT (пока не сохранено)
+end
+M -> UI : скорректировать исключения (ABSENT)\nи нажать «Сохранить»
+UI -> AS : save_marks(user, lesson_id, marks, reason)
+AS -> AP : can_mark(user, lesson, now);\ncan_edit(user, record, now) для уже отмеченных
+AP --> AS : результат
+
+alt нет права или окно закрыто
+  AS --> UI : ошибка
+  UI --> M : «Редактирование недоступно»
+else меняется уже отмеченная запись, а причина пуста
+  AS --> UI : ошибка «нужна причина правки»
+  UI --> M : запросить причину
+else проверки пройдены
+  AS -> ST : уровень предупреждения до сохранения
+  AS -> DB : BEGIN
+  loop по каждой изменённой записи
+    AS -> DB : UPDATE AttendanceRecord (status, marked_at)
+    AS -> DB : INSERT AttendanceChange\n(old, new, changed_by, at, reason, source)
+  end
+  alt нарушено ограничение уникальности\nили другая ошибка
+    AS -> DB : ROLLBACK
+    AS --> UI : «Данные изменились, обновите страницу»
+    UI --> M : сообщение об ошибке
+  else успешно
+    AS -> DB : COMMIT
+    loop по студентам с изменившимся статусом
+      AS -> ST : пересчитать статистику курса
+      ST -> ST : AttendanceCalculator.calculate(...)
+      ST --> AS : AttendanceStats (level)
+      opt уровень ухудшился (OK -> WARNING, WARNING -> BELOW_THRESHOLD)
+        AS -> NS : notify(student, THRESHOLD_WARNING, text)
+        NS -> DB : INSERT Notification
+        NS -> TG : отправить сообщение (если привязан Telegram)
+      end
+    end
+    AS --> UI : сохранено
+    UI --> M : «Отметки сохранены»
+  end
+end
+
+@enduml

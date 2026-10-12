@@ -1,0 +1,59 @@
+@startuml SequenceDelegation
+title Последовательность: временная замена старосты
+
+autonumber
+actor "Староста / зам." as H
+actor "Студент-замена" as D
+participant "Telegram-бот" as Bot
+participant "DelegationService" as API
+participant "AccessPolicy" as AP
+participant "NotificationService" as NS
+participant "Планировщик" as T
+database "БД" as DB
+
+== Назначение ==
+H -> Bot : «Назначить замену» → выбрать студента группы
+Bot -> API : assign(grantor, delegate)
+API -> AP : can_assign_delegate(grantor, delegate, now)
+AP -> DB : роли, группа, активные замены
+alt нельзя назначить\n(грантор не староста/зам., другая группа,\nделегат сам староста/зам., замена уже активна)
+  API --> Bot : ошибка
+  Bot --> H : «Назначение невозможно» + причина
+else можно
+  API -> DB : INSERT Delegation\n(granted_at = now,\nvalid_until = 00:00 следующего дня)
+  API -> NS : notify(delegate, DELEGATION_GRANTED)
+  NS --> D : «Вы можете отмечать посещаемость до конца дня»
+  API --> Bot : ок
+  Bot --> H : «Замена назначена»
+end
+
+== Работа замены ==
+D -> API : (через сайт) save_marks(...) для занятия сегодня
+API -> AP : can_mark(delegate, lesson, now)
+AP -> DB : есть Delegation, revoked_at пуст, now < valid_until?
+alt замена активна
+  AP --> API : разрешено
+  API --> D : отметка выполняется\n(в истории: changed_by = замена)
+else замена неактивна
+  AP --> API : запрещено
+  API --> D : ошибка доступа
+end
+
+D -> API : assign(...) - попытка передать права дальше
+API -> AP : can_assign_delegate(delegate, other, now)
+AP --> API : запрещено
+API --> D : «Замена не может передавать права»
+
+== Досрочный отзыв ==
+opt староста отзывает замену
+  H -> Bot : «Отозвать замену»
+  Bot -> API : revoke(grantor, delegation_id)
+  API -> DB : UPDATE Delegation SET revoked_at = now
+  API -> NS : notify(delegate, DELEGATION_REVOKED)
+  NS --> D : «Права замены сняты»
+  API --> Bot : ок
+  Bot --> H : «Замена отозвана»
+end
+
+
+@enduml

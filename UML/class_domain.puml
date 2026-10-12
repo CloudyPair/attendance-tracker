@@ -1,0 +1,224 @@
+@startuml ClassDomain
+title Диаграмма классов: предметная область (Django-модели, attendance/models.py)
+
+skinparam classAttributeIconSize 0
+skinparam nodesep 50
+skinparam ranksep 60
+hide empty members
+
+legend top left
+  Каждый класс — модель Django (таблица БД) с методами предметной области.
+  Подпись связи — имя поля в модели (внешний ключ на стороне «0..*»).
+  [0..1] у атрибута — поле может быть пустым (null).
+endlegend
+
+' ================= Перечисления (models.TextChoices) =================
+enum GroupRole {
+  MEMBER
+  HEADMAN
+  DEPUTY
+}
+
+enum LessonType {
+  LECTURE
+  SEMINAR
+  LAB
+}
+
+enum AttendanceStatus {
+  NOT_MARKED
+  PRESENT
+  ABSENT
+}
+
+enum DisputeStatus {
+  OPEN
+  FIXED
+  REJECTED
+}
+
+enum ChangeSource {
+  MARKING
+  EDIT
+  DISPUTE
+}
+
+enum NotificationType {
+  DISPUTE_CREATED
+  DISPUTE_RESOLVED
+  DELEGATION_GRANTED
+  DELEGATION_REVOKED
+  THRESHOLD_WARNING
+}
+
+' ================= Пользователи и учебная структура =================
+class User <<AbstractUser>> {
+  +username: str
+  +first_name: str
+  +last_name: str
+  +is_active: bool
+  +full_name: str {readOnly}
+  +check_password(raw_password: str): bool
+}
+
+class Student {
+  +role: GroupRole = MEMBER
+  +is_headman_or_deputy(): bool
+  +belongs_to(group: Group): bool
+  +has_active_delegation(now: datetime): bool
+}
+
+class Teacher {
+}
+
+class Group {
+  +name: str {unique}
+}
+
+class Subject {
+  +name: str {unique}
+}
+
+class Course {
+  +semester: str
+  +threshold_percent: int = 50
+  +set_threshold(percent: int): None
+}
+
+class Lesson {
+  +external_uid: str [0..1] {unique}
+  +start_at: datetime
+  +end_at: datetime
+  +type: LessonType
+  +room: str
+  +window_opens_at(): datetime
+  +edit_deadline(): datetime
+  +is_marking_window_open(now: datetime): bool
+  +has_started(now: datetime): bool
+}
+
+' ================= Посещаемость =================
+class AttendanceRecord {
+  +status: AttendanceStatus = NOT_MARKED
+  +marked_at: datetime [0..1]
+  +last_changed_at: datetime [0..1]
+  +change(new_status: AttendanceStatus, by: Student, reason: str, now: datetime, source: ChangeSource = None): AttendanceChange
+}
+
+class AttendanceChange {
+  +old_status: AttendanceStatus
+  +new_status: AttendanceStatus
+  +changed_at: datetime
+  +reason: str
+  +source: ChangeSource
+}
+
+class AbsenceReason {
+  +text: str
+  +attachment: file [0..1]
+  +created_at: datetime
+}
+
+class Dispute {
+  +comment: str
+  +status: DisputeStatus = OPEN
+  +created_at: datetime
+  +resolved_at: datetime [0..1]
+  +resolution_comment: str
+  +resolve(fix: bool, by: Student, comment: str, now: datetime): None
+}
+
+' ================= Замена старосты =================
+class Delegation {
+  +granted_at: datetime
+  +valid_until: datetime
+  +revoked_at: datetime [0..1]
+  +is_active(now: datetime): bool
+  +revoke(by: Student, now: datetime): None
+}
+
+' ================= Telegram и уведомления =================
+class TelegramLink {
+  +chat_id: str {unique}
+  +linked_at: datetime
+  +notifications_enabled: bool = True
+}
+
+class LinkToken {
+  +token: str {unique}
+  +expires_at: datetime
+  +used_at: datetime [0..1]
+  +is_valid(now: datetime): bool
+}
+
+class Notification {
+  +type: NotificationType
+  +text: str
+  +created_at: datetime
+  +sent_at: datetime [0..1]
+}
+
+' ================= Учётная запись и профили =================
+User "1" -- "0..1" Student : user
+User "1" -- "0..1" Teacher : user
+
+' ================= Учебная структура =================
+Group "1" o-- "0..*" Student : group
+Group "1" -- "0..*" Course : group
+Subject "1" -- "0..*" Course : subject
+Course "0..*" -- "1..*" Teacher : teachers
+Course "1" *-- "0..*" Lesson : course
+Lesson "0..*" -- "0..1" Teacher : teacher
+
+' ================= Посещаемость =================
+Lesson "1" *-- "0..*" AttendanceRecord : lesson
+Student "1" -- "0..*" AttendanceRecord : student
+AttendanceRecord "0..*" -- "0..1" Student : marked_by
+AttendanceRecord "1" *-- "0..*" AttendanceChange : record
+AttendanceChange "0..*" -- "1" Student : changed_by
+AttendanceRecord "1" *-- "0..1" AbsenceReason : record
+AttendanceRecord "1" *-- "0..*" Dispute : record
+Dispute "0..*" -- "0..1" Student : resolved_by
+
+' ================= Замена =================
+Delegation "0..*" -- "1" Student : delegate
+Delegation "0..*" -- "1" Student : granted_by
+
+' ================= Telegram =================
+Student "1" -- "0..1" TelegramLink : student
+Student "1" *-- "0..*" LinkToken : student
+Student "1" -- "0..*" Notification : recipient
+
+' ================= Ограничения целостности (БД) =================
+note right of User
+  Учётная запись Django (вход, пароль, админка).
+  Роль задаётся профилем: Student или Teacher.
+  Наследование User <|-- Student/Teacher заменено
+  связью 1 : 0..1 (рефакторинг ЛР2).
+end note
+
+note bottom of AttendanceRecord
+  unique (lesson, student) — защита от дублирующей отметки (ТЗ 5.2)
+end note
+
+note bottom of Dispute
+  не более одного спора в статусе OPEN на одну отметку
+end note
+
+note bottom of Student
+  в группе не более одного HEADMAN и одного DEPUTY
+end note
+
+note bottom of Delegation
+  valid_until > granted_at; granted_by ≠ delegate
+end note
+
+note bottom of Course
+  unique (group, subject, semester); 0 ≤ threshold_percent ≤ 100
+end note
+
+note bottom of Lesson
+  end_at > start_at
+end note
+
+@enduml

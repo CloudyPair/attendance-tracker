@@ -1,0 +1,13 @@
+# Единые окончания строк для Windows и Linux: в репозитории и в рабочей папке - LF
+* text=auto eol=lf
+
+# Скрипты Windows - CRLF
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Двоичные файлы не трогать
+*.docx binary
+*.png binary
+*.jpg binary
+*.sqlite3 binary

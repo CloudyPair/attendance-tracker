@@ -1,0 +1,268 @@
+@startuml ClassServices
+title Диаграмма классов: сервисный слой, модули и интеграции
+
+skinparam classAttributeIconSize 0
+skinparam nodesep 45
+skinparam ranksep 55
+hide empty members
+set separator none
+
+legend top left
+  AttendanceCalculator — чистые функции без БД (тестируются без Django, ЛР6).
+  Время передаётся в сервисы через IClock, в правила — параметром now (подмена в тестах).
+endlegend
+
+' ================= Модели из диаграммы предметной области (только имена) =================
+class Student <<model>>
+class Teacher <<model>>
+class Lesson <<model>>
+class Course <<model>>
+class AttendanceRecord <<model>>
+class AttendanceChange <<model>>
+class Dispute <<model>>
+class Delegation <<model>>
+class LinkToken <<model>>
+class TelegramLink <<model>>
+class Notification <<model>>
+
+enum WarningLevel {
+  OK
+  WARNING
+  BELOW_THRESHOLD
+}
+
+' ================= Модуль: сайт (Django) =================
+package "Модуль: сайт (attendance/views.py)" {
+  class WebViews {
+    +marking_page()
+    +my_attendance_page()
+    +disputes_page()
+    +teacher_stats_page()
+    +export_download(format: str)
+    +telegram_link_page()
+  }
+}
+
+' ================= Модуль: Telegram-бот (aiogram) =================
+package "Модуль: Telegram-бот (aiogram)" {
+  class BotHandlers {
+    +on_start(token: str, chat_id: str)
+    +on_show_attendance(chat_id: str)
+    +on_dispute(chat_id: str, record_id: int, comment: str)
+    +on_resolve_dispute(chat_id: str, dispute_id: int, fix: bool, comment: str)
+    +on_assign_delegate(chat_id: str, delegate_id: int)
+    +on_revoke_delegate(chat_id: str, delegation_id: int)
+  }
+
+  class TelegramChannel {
+    +send(chat_id: str, text: str): bool
+  }
+}
+
+' ================= Модуль: импорт расписания =================
+package "Модуль: импорт расписания (manage.py import_schedule)" {
+  class ScheduleImporter {
+    +import_ics(file: BinaryIO, group_id: int): ImportResult
+    -_expand_recurrence(vevent): list
+    -_is_service_event(vevent): bool
+    -_parse_occurrence(vevent): dict
+  }
+
+  class ImportResult <<value object>> {
+    +created: int
+    +skipped: int
+    +errors: list[str]
+  }
+}
+
+' ================= Ядро: сервисы (attendance/services) =================
+package "Ядро (attendance/services)" {
+
+  interface IClock {
+    +now(): datetime
+  }
+
+  class DjangoClock {
+    +now(): datetime
+  }
+
+  class Services <<factory>> {
+    +build_services(clock: IClock = None, channel: INotificationChannel = None): Services
+  }
+
+  class AttendanceStats <<value object>> {
+    +total: int
+    +marked: int
+    +present: int
+    +missed: int
+    +not_marked: int
+    +percent: int
+    +allowed_misses: int
+    +level: WarningLevel
+  }
+
+  class AttendanceCalculator <<static>> {
+    +current_percent(marked: int, missed: int): int
+    +allowed_misses(total: int, missed: int, threshold_percent: int): int
+    +get_level(allowed_misses: int): WarningLevel
+    +get_icon(level: WarningLevel): str
+    +calculate(lessons: list[Lesson], records: list[AttendanceRecord], threshold_percent: int, now: datetime): AttendanceStats
+  }
+
+  class AccessPolicy {
+    +can_mark(user: Student, lesson: Lesson, now: datetime): bool
+    +can_edit(user: Student, record: AttendanceRecord, now: datetime): bool
+    +can_assign_delegate(grantor: Student, delegate: Student, now: datetime): bool
+    +can_resolve_dispute(user: Student, dispute: Dispute): bool
+    +can_view_course(teacher: Teacher, course: Course): bool
+    +can_set_threshold(teacher: Teacher, course: Course): bool
+  }
+
+  class AttendanceService {
+    +open_lesson(user: Student, lesson_id: int): list[AttendanceRecord]
+    +save_marks(user: Student, lesson_id: int, marks: dict[int, AttendanceStatus], reason: str): None
+    +correct_record(actor: Student, record_id: int, new_status: AttendanceStatus, reason: str, source: ChangeSource): None
+    +get_unmarked_lessons(user: Student): list[Lesson]
+  }
+
+  class DisputeService {
+    +set_absence_reason(student: Student, record_id: int, text: str): None
+    +create(student: Student, record_id: int, comment: str): Dispute
+    +resolve(resolver: Student, dispute_id: int, fix: bool, comment: str): None
+  }
+
+  class DelegationService {
+    +assign(grantor: Student, delegate: Student): Delegation
+    +revoke(grantor: Student, delegation_id: int): None
+    +notify_expired(now: datetime): None
+  }
+
+  class CourseService {
+    +set_threshold(teacher: Teacher, course_id: int, percent: int): None
+  }
+
+  class StatisticsService {
+    +for_student(student: Student, from_: datetime, to: datetime): list[AttendanceStats]
+    +for_course(teacher: Teacher, course: Course, from_: datetime, to: datetime): CourseReport
+    +students_below_threshold(group_id: int): list[Student]
+    +get_record_history(teacher: Teacher, record_id: int): list[AttendanceChange]
+  }
+
+  class CourseReport <<value object>> {
+    +course: Course
+    +from_: datetime
+    +to: datetime
+    +rows: list[ReportRow]
+    +unmarked_lessons: list[Lesson]
+  }
+
+  class ReportRow <<value object>> {
+    +student: Student
+    +by_type: dict[LessonType, AttendanceStats]
+    +total: AttendanceStats
+    +reasons: list[str]
+  }
+
+  interface IReportExporter {
+    +format: str
+    +export(report: CourseReport): bytes
+  }
+
+  class XlsxExporter
+  class CsvExporter
+  class PdfExporter
+
+  class TelegramLinkService {
+    +create_link_token(student: Student): str
+    +bind(token: str, chat_id: str): TelegramLink
+  }
+
+  class NotificationService {
+    +notify(recipient: Student, type: NotificationType, text: str): None
+    +notify_headmen(group_id: int, type: NotificationType, text: str): None
+  }
+
+  interface INotificationChannel {
+    +send(chat_id: str, text: str): bool
+  }
+
+  class NullChannel {
+    +send(chat_id: str, text: str): bool
+  }
+}
+
+' ================= Реализация интерфейсов =================
+IClock <|.. DjangoClock
+IReportExporter <|.. XlsxExporter
+IReportExporter <|.. CsvExporter
+IReportExporter <|.. PdfExporter
+INotificationChannel <|.. TelegramChannel
+INotificationChannel <|.. NullChannel
+
+' ================= Сборка зависимостей =================
+Services ..> AttendanceService : создаёт
+Services ..> DisputeService : создаёт
+Services ..> DelegationService : создаёт
+Services ..> CourseService : создаёт
+Services ..> StatisticsService : создаёт
+Services ..> TelegramLinkService : создаёт
+Services ..> NotificationService : создаёт
+
+' ================= Клиенты -> сервисы =================
+WebViews ..> Services
+WebViews ..> IReportExporter
+BotHandlers ..> Services
+
+' ================= Зависимости сервисов =================
+AttendanceService ..> AccessPolicy
+AttendanceService ..> StatisticsService
+AttendanceService ..> NotificationService
+AttendanceService ..> IClock
+AttendanceService ..> AttendanceRecord
+AttendanceService ..> AttendanceChange
+
+DisputeService ..> AccessPolicy
+DisputeService ..> AttendanceService
+DisputeService ..> NotificationService
+DisputeService ..> IClock
+DisputeService ..> Dispute
+
+DelegationService ..> AccessPolicy
+DelegationService ..> NotificationService
+DelegationService ..> IClock
+DelegationService ..> Delegation
+
+CourseService ..> AccessPolicy
+CourseService ..> Course
+
+AccessPolicy ..> Delegation : активная замена
+AccessPolicy ..> Lesson
+AccessPolicy ..> AttendanceRecord
+
+StatisticsService ..> AttendanceCalculator
+StatisticsService ..> AccessPolicy
+StatisticsService ..> IClock
+StatisticsService ..> CourseReport
+
+AttendanceCalculator ..> AttendanceStats
+AttendanceCalculator ..> WarningLevel
+AttendanceCalculator ..> Lesson
+AttendanceCalculator ..> AttendanceRecord
+
+CourseReport "1" *-- "0..*" ReportRow
+ReportRow --> AttendanceStats : total, by_type
+IReportExporter ..> CourseReport
+
+ScheduleImporter ..> Lesson : создаёт
+ScheduleImporter ..> Course : создаёт
+ScheduleImporter ..> ImportResult
+
+TelegramLinkService ..> LinkToken
+TelegramLinkService ..> TelegramLink
+TelegramLinkService ..> IClock
+
+NotificationService ..> Notification
+NotificationService ..> INotificationChannel
+NotificationService ..> TelegramLink : chat_id получателя
+
+@enduml

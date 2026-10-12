@@ -1,0 +1,71 @@
+@startuml SequenceDispute
+title Последовательность: причина пропуска и оспаривание отметки
+
+autonumber
+actor "Студент" as S
+participant "Telegram-бот\n(BotHandlers)" as Bot
+participant "DisputeService" as DS
+participant "AccessPolicy" as AP
+participant "AttendanceService" as AS
+participant "StatisticsService" as ST
+participant "NotificationService" as NS
+database "БД" as DB
+actor "Староста / зам." as H
+
+
+== Вариант А: только указать причину пропуска ==
+S -> Bot : выбрать пропущенную пару → «Указать причину»
+Bot -> DS : set_absence_reason(student, record_id, text)
+DS -> DB : проверить: запись принадлежит студенту, статус ABSENT
+alt проверка не пройдена
+  DS --> Bot : ошибка
+  Bot --> S : «Нельзя указать причину для этой пары»
+else
+  DS -> DB : INSERT / UPDATE AbsenceReason
+  DS --> Bot : ок
+  Bot --> S : «Причина сохранена, её увидит преподаватель»
+end
+
+== Вариант Б: оспорить отметку ==
+S -> Bot : выбрать пару → «Оспорить»\nи ввести комментарий
+Bot -> DS : create(student, record_id, comment)
+DS -> DB : проверить: запись принадлежит студенту,\nстатус ABSENT, нет открытого спора
+alt проверка не пройдена
+  DS --> Bot : ошибка
+  Bot --> S : «Спор уже открыт / отметка не ваша»
+else
+  DS -> DB : INSERT Dispute (status = OPEN)
+  DS -> NS : notify_headmen(group_id, DISPUTE_CREATED, text)
+  NS -> DB : INSERT Notification
+  NS -> Bot : отправить уведомление старосте и заместителю
+  Bot --> H : «Новый спор по отметке»
+  DS --> Bot : dispute_id
+  Bot --> S : «Спор создан, ожидайте решения»
+end
+
+== Рассмотрение старостой или заместителем ==
+H -> Bot : открыть спор → «Исправить» или «Отклонить» (бот или сайт)
+Bot -> DS : resolve(resolver, dispute_id, fix, comment)
+DS -> AP : can_resolve_dispute(resolver, dispute)
+AP --> DS : разрешено / запрещено
+alt нет права (в т.ч. делегат)
+  DS --> Bot : ошибка доступа
+  Bot --> H : «Недостаточно прав»
+else есть право
+  alt fix = true (исправить отметку)
+    DS -> AS : correct_record(resolver, record_id, PRESENT,\n«Спор №N», source = DISPUTE)
+    AS -> DB : UPDATE AttendanceRecord + INSERT AttendanceChange
+    AS -> ST : пересчитать статистику студента
+    DS -> DB : Dispute.status = FIXED, resolved_at, resolved_by
+  else fix = false (отклонить)
+    DS -> DB : Dispute.status = REJECTED,\nresolution_comment (обязателен)
+  end
+  DS -> NS : notify(student, DISPUTE_RESOLVED, результат)
+  NS -> DB : INSERT Notification
+  NS -> Bot : отправить сообщение студенту
+  Bot --> S : «Спор рассмотрен: отметка исправлена / отклонена»
+  DS --> Bot : решение сохранено
+  Bot --> H : «Решение записано в историю»
+end
+
+@enduml

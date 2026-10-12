@@ -1,0 +1,165 @@
+@startuml UseCase
+title Диаграмма прецедентов: система учёта посещаемости
+
+left to right direction
+skinparam packageStyle rectangle
+skinparam usecase {
+  BackgroundColor #FDFDFD
+}
+
+' ---------- Акторы ----------
+actor "Студент" as Student
+actor "Ответственный\nза отметку" as Marker <<абстрактный>>
+actor "Староста" as Headman
+actor "Заместитель\nстаросты" as Deputy
+actor "Временная замена\n(делегат)" as Delegate
+actor "Преподаватель" as Teacher
+actor "Администратор\n(технический)" as Admin
+actor "Планировщик\n(время)" as Timer
+actor "Telegram" as Telegram <<внешняя система>>
+actor "Парсер расписания МИЭТ\n(schedule_parser)" as Parser <<внешняя система>>
+
+' Иерархия ролей внутри группы
+Marker --|> Student
+Headman --|> Marker
+Delegate --|> Marker
+Deputy --|> Headman
+
+rectangle "Система учёта посещаемости" {
+
+  usecase "Войти в систему" as UC_Login
+
+  package "Просмотр посещаемости" {
+    usecase "Просмотреть свои занятия\nи отметки" as UC_MyLessons
+    usecase "Просмотреть статистику\nпо предмету и типам занятий" as UC_MyStats
+    usecase "Увидеть индикатор порога\n" as UC_Icon
+  }
+
+  package "Причины и оспаривание" {
+    usecase "Указать причину пропуска" as UC_Reason
+    usecase "Оспорить отметку" as UC_Dispute
+    usecase "Рассмотреть оспаривание" as UC_Resolve
+    usecase "Исправить отметку\nпо оспариванию" as UC_Fix
+    usecase "Отклонить оспаривание\n(с комментарием)" as UC_Reject
+  }
+
+  package "Отметка посещаемости" {
+    usecase "Выбрать занятие\nиз расписания" as UC_PickLesson
+    usecase "Отметить посещаемость\nгруппы" as UC_Mark
+    usecase "Отметить всех\nприсутствующими" as UC_MarkAll
+    usecase "Изменить сохранённую отметку" as UC_Edit
+    usecase "Указать причину правки" as UC_EditReason
+    usecase "Записать изменение\nв историю" as UC_History
+    usecase "Просмотреть неотмеченные\nзанятия" as UC_Unmarked
+    usecase "Просмотреть студентов группы\nниже порога" as UC_GroupLow
+  }
+
+  package "Замена старосты" {
+    usecase "Назначить замену\n(до конца дня)" as UC_Assign
+    usecase "Отозвать замену досрочно" as UC_Revoke
+    usecase "Завершить замену\nв конце дня" as UC_Expire
+  }
+
+  package "Аналитика преподавателя" {
+    usecase "Выбрать предмет и группу" as UC_PickCourse
+    usecase "Просмотреть посещаемость\nпо студентам и типам занятий" as UC_TeacherStats
+    usecase "Просмотреть причины пропусков" as UC_TeacherReasons
+    usecase "Просмотреть историю\nизменений отметки" as UC_TeacherHistory
+    usecase "Задать порог посещаемости\n(по умолчанию 50%)" as UC_Threshold
+    usecase "Экспортировать статистику\n(Excel / CSV / PDF)" as UC_Export
+  }
+
+  package "Telegram-бот" {
+    usecase "Привязать Telegram\n(одноразовая ссылка)" as UC_Link
+    usecase "Настроить уведомления" as UC_Notif
+    usecase "Отправить уведомление\nв Telegram" as UC_Notify
+    usecase "Предупредить о приближении\nк порогу" as UC_Warn
+  }
+
+  package "Администрирование" {
+    usecase "Управлять справочниками\n(группы, студенты, преподаватели,\nпредметы)" as UC_Dict
+    usecase "Назначить старосту\nи заместителя" as UC_Roles
+    usecase "Импортировать расписание\nиз .ics (разово)" as UC_Import
+  }
+}
+
+' ---------- Студент ----------
+Student -- UC_Login
+Student -- UC_MyLessons
+Student -- UC_MyStats
+Student -- UC_Reason
+Student -- UC_Dispute
+Student -- UC_Link
+Student -- UC_Notif
+
+' ---------- Ответственный за отметку (староста, зам., делегат) ----------
+Marker -- UC_PickLesson
+Marker -- UC_Mark
+Marker -- UC_Unmarked
+Marker -- UC_GroupLow
+
+' ---------- Староста и заместитель ----------
+Headman -- UC_Assign
+Headman -- UC_Revoke
+Headman -- UC_Resolve
+
+' ---------- Преподаватель ----------
+Teacher -- UC_Login
+Teacher -- UC_PickCourse
+Teacher -- UC_TeacherStats
+Teacher -- UC_TeacherHistory
+Teacher -- UC_Threshold
+Teacher -- UC_Unmarked
+Teacher -- UC_Export
+
+' ---------- Администратор ----------
+Admin -- UC_Dict
+Admin -- UC_Roles
+Admin -- UC_Import
+Parser -- UC_Import
+
+' ---------- Внешние акторы ----------
+Timer -- UC_Expire
+Telegram -- UC_Link
+Telegram -- UC_Notify
+
+' ---------- Связи include / extend ----------
+' Просмотр
+UC_MyStats ..> UC_Icon : <<include>>
+UC_TeacherStats ..> UC_Icon : <<include>>
+UC_GroupLow ..> UC_Icon : <<include>>
+UC_TeacherStats ..> UC_PickCourse : <<include>>
+UC_TeacherReasons ..> UC_TeacherStats : <<extend>>
+UC_TeacherHistory ..> UC_TeacherStats : <<extend>>
+UC_Export ..> UC_TeacherStats : <<include>>
+
+' Отметка
+UC_Mark ..> UC_PickLesson : <<include>>
+UC_Mark ..> UC_History : <<include>>
+UC_MarkAll ..> UC_Mark : <<extend>>
+UC_Edit ..> UC_Mark : <<extend>>
+UC_Edit ..> UC_EditReason : <<include>>
+UC_Edit ..> UC_History : <<include>>
+UC_Warn ..> UC_Mark : <<extend>>
+UC_Warn ..> UC_Notify : <<include>>
+
+' Причины и оспаривание
+UC_Dispute ..> UC_Notify : <<include>>
+UC_Reason ..> UC_MyLessons : <<extend>>
+UC_Dispute ..> UC_MyLessons : <<extend>>
+UC_Fix ..> UC_Resolve : <<extend>>
+UC_Reject ..> UC_Resolve : <<extend>>
+UC_Fix ..> UC_History : <<include>>
+UC_Resolve ..> UC_Notify : <<include>>
+
+' Замена
+UC_Assign ..> UC_Notify : <<include>>
+UC_Revoke ..> UC_Notify : <<include>>
+UC_Expire ..> UC_Notify : <<include>>
+
+' Аутентификация
+UC_MyLessons ..> UC_Login : <<include>>
+UC_Mark ..> UC_Login : <<include>>
+UC_TeacherStats ..> UC_Login : <<include>>
+
+@enduml
