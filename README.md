@@ -4,4 +4,7 @@
 
 ## Запуск
 
-Запуск: см. раздел 7 в kpo_project.md
+Запуск (Windows): py -3.13 -m venv venv
+venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+venv\Scripts\python.exe manage.py migrate
+venv\Scripts\python.exe manage.py runserver
