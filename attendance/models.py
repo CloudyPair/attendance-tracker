@@ -1,13 +1,11 @@
-"""Предметная область (UML/class_domain.puml): модели Django с методами.
+"""Модели предметной области (UML/class_domain.puml).
 
-Каждый класс - таблица БД и одновременно класс диаграммы: поля, связи и
-ограничения целостности плюс правила предметной области (методы).
-Права доступа проверяет AccessPolicy (attendance/services), а не модели.
+Каждая модель - это таблица в БД и класс диаграммы. Методы моделей проверяют
+правила своего объекта и сами сохраняют изменения. Кто имеет право на
+действие, проверяет AccessPolicy (attendance/services).
 
-Время передаётся параметром `now` (aware datetime); границы «до 00:00»
-считаются по местному времени (attendance/timeutils.py).
-Методы, меняющие состояние (change, resolve, revoke, set_threshold),
-сами сохраняют изменения в БД.
+Время передаётся параметром `now`, границы суток считаются по местному
+времени (attendance/timeutils.py).
 """
 from datetime import datetime
 
@@ -21,7 +19,8 @@ from .errors import AccessDeniedError, InvalidChangeError, ReasonRequiredError
 from .timeutils import day_start, next_midnight
 
 
-# ================= Перечисления =================
+# Перечисления
+
 class GroupRole(models.TextChoices):
     MEMBER = "MEMBER", "Студент"
     HEADMAN = "HEADMAN", "Староста"
@@ -60,9 +59,10 @@ class NotificationType(models.TextChoices):
     THRESHOLD_WARNING = "THRESHOLD_WARNING", "Приближение к порогу"
 
 
-# ================= Пользователи и учебная структура =================
+# Пользователи и учебная структура
+
 class User(AbstractUser):
-    """Учётная запись (вход, пароль, права админки). Роль - через профиль Student или Teacher."""
+    """Учётная запись. Роль задаётся профилем Student или Teacher."""
 
     class Meta:
         verbose_name = "пользователь"
@@ -87,15 +87,20 @@ class Group(models.Model):
 
 class Student(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="student")
-    group = models.ForeignKey(Group, on_delete=models.PROTECT, related_name="students",
-                              verbose_name="группа")
-    role = models.CharField("роль в группе", max_length=10, choices=GroupRole.choices,
-                            default=GroupRole.MEMBER)
+    group = models.ForeignKey(
+        Group, on_delete=models.PROTECT,
+        related_name="students", verbose_name="группа",
+    )
+    role = models.CharField(
+        "роль в группе", max_length=10,
+        choices=GroupRole.choices, default=GroupRole.MEMBER,
+    )
 
     class Meta:
         verbose_name = "студент"
         verbose_name_plural = "студенты"
         constraints = [
+            # В группе не больше одного старосты и одного заместителя
             models.UniqueConstraint(fields=["group"], condition=Q(role=GroupRole.HEADMAN),
                                     name="one_headman_per_group"),
             models.UniqueConstraint(fields=["group"], condition=Q(role=GroupRole.DEPUTY),
@@ -112,7 +117,10 @@ class Student(models.Model):
         return group is not None and self.group_id == group.pk
 
     def has_active_delegation(self, now: datetime) -> bool:
-        return any(d.is_active(now) for d in self.delegations.all())
+        for delegation in self.delegations.all():
+            if delegation.is_active(now):
+                return True
+        return False
 
 
 class Teacher(models.Model):
@@ -141,13 +149,19 @@ class Subject(models.Model):
 class Course(models.Model):
     """Предмет у конкретной группы в семестре."""
 
-    group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name="courses",
-                              verbose_name="группа")
-    subject = models.ForeignKey(Subject, on_delete=models.PROTECT, related_name="courses",
-                                verbose_name="предмет")
+    group = models.ForeignKey(
+        Group, on_delete=models.CASCADE,
+        related_name="courses", verbose_name="группа",
+    )
+    subject = models.ForeignKey(
+        Subject, on_delete=models.PROTECT,
+        related_name="courses", verbose_name="предмет",
+    )
     semester = models.CharField("семестр", max_length=20)
     threshold_percent = models.PositiveSmallIntegerField(
-        "порог посещаемости, %", default=50, validators=[MaxValueValidator(100)])
+        "порог посещаемости, %", default=50,
+        validators=[MaxValueValidator(100)],
+    )
     teachers = models.ManyToManyField(Teacher, related_name="courses", verbose_name="преподаватели")
 
     class Meta:
@@ -162,19 +176,27 @@ class Course(models.Model):
         return f"{self.subject} - {self.group}, {self.semester}"
 
     def set_threshold(self, percent: int) -> None:
-        if isinstance(percent, bool) or not isinstance(percent, int) or not 0 <= percent <= 100:
+        if not isinstance(percent, int) or not 0 <= percent <= 100:
             raise ValueError("Порог должен быть целым числом от 0 до 100")
+
         self.threshold_percent = percent
         self.save(update_fields=["threshold_percent"])
 
 
 class Lesson(models.Model):
-    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="lessons",
-                               verbose_name="курс")
-    teacher = models.ForeignKey(Teacher, on_delete=models.SET_NULL, null=True, blank=True,
-                                related_name="lessons", verbose_name="преподаватель")
-    # UID события .ics + дата вхождения; пусто у занятий, заведённых вручную
-    external_uid = models.CharField("внешний UID", max_length=255, unique=True, null=True, blank=True)
+    course = models.ForeignKey(
+        Course, on_delete=models.CASCADE,
+        related_name="lessons", verbose_name="курс",
+    )
+    teacher = models.ForeignKey(
+        Teacher, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="lessons", verbose_name="преподаватель",
+    )
+    # UID события из .ics + дата; пусто, если занятие заведено вручную
+    external_uid = models.CharField(
+        "внешний UID", max_length=255,
+        unique=True, null=True, blank=True,
+    )
     start_at = models.DateTimeField("начало")
     end_at = models.DateTimeField("окончание")
     type = models.CharField("тип", max_length=10, choices=LessonType.choices)
@@ -185,7 +207,8 @@ class Lesson(models.Model):
         verbose_name_plural = "занятия"
         ordering = ["start_at"]
         constraints = [
-            models.CheckConstraint(condition=Q(end_at__gt=F("start_at")), name="lesson_end_after_start"),
+            models.CheckConstraint(condition=Q(end_at__gt=F("start_at")),
+                                   name="lesson_end_after_start"),
         ]
 
     def __str__(self):
@@ -207,16 +230,25 @@ class Lesson(models.Model):
         return now >= self.start_at
 
 
-# ================= Посещаемость =================
+# Посещаемость
+
 class AttendanceRecord(models.Model):
-    lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name="records",
-                               verbose_name="занятие")
-    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name="records",
-                                verbose_name="студент")
-    status = models.CharField("статус", max_length=10, choices=AttendanceStatus.choices,
-                              default=AttendanceStatus.NOT_MARKED)
-    marked_by = models.ForeignKey(Student, on_delete=models.SET_NULL, null=True, blank=True,
-                                  related_name="+", verbose_name="отметил")
+    lesson = models.ForeignKey(
+        Lesson, on_delete=models.CASCADE,
+        related_name="records", verbose_name="занятие",
+    )
+    student = models.ForeignKey(
+        Student, on_delete=models.CASCADE,
+        related_name="records", verbose_name="студент",
+    )
+    status = models.CharField(
+        "статус", max_length=10,
+        choices=AttendanceStatus.choices, default=AttendanceStatus.NOT_MARKED,
+    )
+    marked_by = models.ForeignKey(
+        Student, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+", verbose_name="отметил",
+    )
     marked_at = models.DateTimeField("время первой отметки", null=True, blank=True)
     last_changed_at = models.DateTimeField("время последнего изменения", null=True, blank=True)
 
@@ -224,8 +256,9 @@ class AttendanceRecord(models.Model):
         verbose_name = "отметка"
         verbose_name_plural = "отметки"
         constraints = [
-            # ТЗ 5.2: защита от повторной отметки одного и того же занятия
-            models.UniqueConstraint(fields=["lesson", "student"], name="one_record_per_lesson_student"),
+            # ТЗ 5.2: одно занятие нельзя отметить у студента дважды
+            models.UniqueConstraint(fields=["lesson", "student"],
+                                    name="one_record_per_lesson_student"),
         ]
 
     def __str__(self):
@@ -233,10 +266,10 @@ class AttendanceRecord(models.Model):
 
     def change(self, new_status: str, by: "Student", reason: str, now: datetime,
                source: str | None = None) -> "AttendanceChange":
-        """Сменить статус и записать изменение в историю (в одной транзакции).
+        """Сменить статус и записать изменение в историю.
 
-        Первая отметка (из NOT_MARKED) - без причины, source = MARKING.
-        Любая последующая правка требует причину, source = EDIT (или DISPUTE).
+        Первая отметка (из NOT_MARKED) сохраняется без причины.
+        Для любой следующей правки причина обязательна.
         """
         if new_status == AttendanceStatus.NOT_MARKED:
             raise InvalidChangeError("Отметку нельзя вернуть в «не отмечено»")
@@ -244,21 +277,32 @@ class AttendanceRecord(models.Model):
             raise InvalidChangeError("Статус не меняется")
 
         reason = (reason or "").strip()
-        first_marking = self.status == AttendanceStatus.NOT_MARKED
-        if first_marking:
+        is_first_mark = self.status == AttendanceStatus.NOT_MARKED
+
+        if is_first_mark:
             source = ChangeSource.MARKING
+        elif not reason:
+            raise ReasonRequiredError("Для правки сохранённой отметки нужна причина")
         else:
-            if not reason:
-                raise ReasonRequiredError("Для правки сохранённой отметки нужна причина")
             source = source or ChangeSource.EDIT
 
-        entry = AttendanceChange(record=self, old_status=self.status, new_status=new_status,
-                                 changed_by=by, changed_at=now, reason=reason, source=source)
+        entry = AttendanceChange(
+            record=self,
+            old_status=self.status,
+            new_status=new_status,
+            changed_by=by,
+            changed_at=now,
+            reason=reason,
+            source=source,
+        )
+
         self.status = new_status
         self.last_changed_at = now
-        if first_marking:
+        if is_first_mark:
             self.marked_by = by
             self.marked_at = now
+
+        # Отметка и запись в истории сохраняются вместе или не сохраняются вовсе
         with transaction.atomic():
             self.save()
             entry.save()
@@ -266,12 +310,16 @@ class AttendanceRecord(models.Model):
 
 
 class AttendanceChange(models.Model):
-    record = models.ForeignKey(AttendanceRecord, on_delete=models.CASCADE, related_name="changes",
-                               verbose_name="отметка")
+    record = models.ForeignKey(
+        AttendanceRecord, on_delete=models.CASCADE,
+        related_name="changes", verbose_name="отметка",
+    )
     old_status = models.CharField("было", max_length=10, choices=AttendanceStatus.choices)
     new_status = models.CharField("стало", max_length=10, choices=AttendanceStatus.choices)
-    changed_by = models.ForeignKey(Student, on_delete=models.PROTECT, related_name="+",
-                                   verbose_name="изменил")
+    changed_by = models.ForeignKey(
+        Student, on_delete=models.PROTECT,
+        related_name="+", verbose_name="изменил",
+    )
     changed_at = models.DateTimeField("когда", default=timezone.now)
     reason = models.TextField("причина", blank=True)
     source = models.CharField("источник", max_length=10, choices=ChangeSource.choices)
@@ -286,8 +334,10 @@ class AttendanceChange(models.Model):
 
 
 class AbsenceReason(models.Model):
-    record = models.OneToOneField(AttendanceRecord, on_delete=models.CASCADE,
-                                  related_name="absence_reason", verbose_name="отметка")
+    record = models.OneToOneField(
+        AttendanceRecord, on_delete=models.CASCADE,
+        related_name="absence_reason", verbose_name="отметка",
+    )
     text = models.TextField("причина")
     attachment = models.FileField("вложение", upload_to="absence/%Y/%m/", blank=True)
     created_at = models.DateTimeField("создана", default=timezone.now)
@@ -301,21 +351,28 @@ class AbsenceReason(models.Model):
 
 
 class Dispute(models.Model):
-    record = models.ForeignKey(AttendanceRecord, on_delete=models.CASCADE, related_name="disputes",
-                               verbose_name="отметка")
+    record = models.ForeignKey(
+        AttendanceRecord, on_delete=models.CASCADE,
+        related_name="disputes", verbose_name="отметка",
+    )
     comment = models.TextField("комментарий студента")
-    status = models.CharField("статус", max_length=10, choices=DisputeStatus.choices,
-                              default=DisputeStatus.OPEN)
+    status = models.CharField(
+        "статус", max_length=10,
+        choices=DisputeStatus.choices, default=DisputeStatus.OPEN,
+    )
     created_at = models.DateTimeField("создан", default=timezone.now)
     resolved_at = models.DateTimeField("рассмотрен", null=True, blank=True)
-    resolved_by = models.ForeignKey(Student, on_delete=models.SET_NULL, null=True, blank=True,
-                                    related_name="+", verbose_name="рассмотрел")
+    resolved_by = models.ForeignKey(
+        Student, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+", verbose_name="рассмотрел",
+    )
     resolution_comment = models.TextField("комментарий к решению", blank=True)
 
     class Meta:
         verbose_name = "спор"
         verbose_name_plural = "споры"
         constraints = [
+            # По одной отметке не больше одного открытого спора
             models.UniqueConstraint(fields=["record"], condition=Q(status=DisputeStatus.OPEN),
                                     name="one_open_dispute_per_record"),
         ]
@@ -324,12 +381,14 @@ class Dispute(models.Model):
         return f"Спор №{self.pk}: {self.get_status_display()}"
 
     def resolve(self, fix: bool, by: "Student", comment: str, now: datetime) -> None:
-        """Зафиксировать решение. Саму отметку исправляет AttendanceService (source = DISPUTE)."""
+        """Зафиксировать решение. Саму отметку исправляет AttendanceService."""
         if self.status != DisputeStatus.OPEN:
             raise InvalidChangeError("Спор уже рассмотрен")
+
         comment = (comment or "").strip()
         if not fix and not comment:
             raise ReasonRequiredError("При отклонении спора нужен комментарий")
+
         self.status = DisputeStatus.FIXED if fix else DisputeStatus.REJECTED
         self.resolved_by = by
         self.resolved_at = now
@@ -337,12 +396,17 @@ class Dispute(models.Model):
         self.save()
 
 
-# ================= Замена старосты =================
+# Замена старосты
+
 class Delegation(models.Model):
-    granted_by = models.ForeignKey(Student, on_delete=models.PROTECT, related_name="granted_delegations",
-                                   verbose_name="назначил")
-    delegate = models.ForeignKey(Student, on_delete=models.CASCADE, related_name="delegations",
-                                 verbose_name="замена")
+    granted_by = models.ForeignKey(
+        Student, on_delete=models.PROTECT,
+        related_name="granted_delegations", verbose_name="назначил",
+    )
+    delegate = models.ForeignKey(
+        Student, on_delete=models.CASCADE,
+        related_name="delegations", verbose_name="замена",
+    )
     granted_at = models.DateTimeField("назначена", default=timezone.now)
     valid_until = models.DateTimeField("действует до")
     revoked_at = models.DateTimeField("отозвана", null=True, blank=True)
@@ -351,8 +415,10 @@ class Delegation(models.Model):
         verbose_name = "замена старосты"
         verbose_name_plural = "замены старосты"
         constraints = [
-            models.CheckConstraint(condition=Q(valid_until__gt=F("granted_at")), name="delegation_valid_period"),
-            models.CheckConstraint(condition=~Q(granted_by=F("delegate")), name="delegation_not_self"),
+            models.CheckConstraint(condition=Q(valid_until__gt=F("granted_at")),
+                                   name="delegation_valid_period"),
+            models.CheckConstraint(condition=~Q(granted_by=F("delegate")),
+                                   name="delegation_not_self"),
         ]
 
     def __str__(self):
@@ -366,11 +432,13 @@ class Delegation(models.Model):
             raise AccessDeniedError("Отозвать замену может только староста или заместитель группы")
         if not self.is_active(now):
             raise InvalidChangeError("Замена уже не действует")
+
         self.revoked_at = now
         self.save(update_fields=["revoked_at"])
 
 
-# ================= Telegram и уведомления =================
+# Telegram и уведомления
+
 class TelegramLink(models.Model):
     student = models.OneToOneField(Student, on_delete=models.CASCADE, related_name="telegram_link")
     chat_id = models.CharField("chat id", max_length=64, unique=True)
@@ -403,8 +471,10 @@ class LinkToken(models.Model):
 
 
 class Notification(models.Model):
-    recipient = models.ForeignKey(Student, on_delete=models.CASCADE, related_name="notifications",
-                                  verbose_name="получатель")
+    recipient = models.ForeignKey(
+        Student, on_delete=models.CASCADE,
+        related_name="notifications", verbose_name="получатель",
+    )
     type = models.CharField("тип", max_length=20, choices=NotificationType.choices)
     text = models.TextField("текст")
     created_at = models.DateTimeField("создано", default=timezone.now)

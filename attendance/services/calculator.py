@@ -1,6 +1,7 @@
 """Расчёт посещаемости, порога и иконки (UML/activity_threshold.puml).
 
-Чистые функции: в БД не ходят, принимают числа или уже загруженные объекты.
+Функции не обращаются к БД: получают числа или уже загруженные объекты,
+поэтому их можно тестировать без Django.
 """
 from dataclasses import dataclass
 from datetime import datetime
@@ -17,19 +18,20 @@ class WarningLevel(Enum):
 
 @dataclass(frozen=True, kw_only=True)
 class AttendanceStats:
-    total: int = 0
-    marked: int = 0
+    total: int = 0           # все занятия курса за период, включая будущие
+    marked: int = 0          # отмеченные: present + missed
     present: int = 0
     missed: int = 0
-    not_marked: int = 0
+    not_marked: int = 0      # начавшиеся занятия без отметки
     percent: int = 100
-    allowed_misses: int = 0
+    allowed_misses: int = 0  # сколько ещё можно пропустить
     level: WarningLevel = WarningLevel.OK
 
 
 class AttendanceCalculator:
     @staticmethod
     def current_percent(marked: int, missed: int) -> int:
+        """Процент посещений среди отмеченных занятий."""
         if marked < 0 or missed < 0 or missed > marked:
             raise ValueError("Пропусков не может быть больше отмеченных занятий")
         if marked == 0:
@@ -38,7 +40,11 @@ class AttendanceCalculator:
 
     @staticmethod
     def allowed_misses(total: int, missed: int, threshold_percent: int) -> int:
-        """floor(всего_занятий × (1 − порог)) − уже_пропущено."""
+        """allowed = floor(total × (100 − порог) / 100) − missed.
+
+        Пример: 10 занятий, порог 50 % - всего можно пропустить 5;
+        если уже пропущено 3, допустимо ещё 2.
+        """
         if not 0 <= threshold_percent <= 100:
             raise ValueError("Порог должен быть в диапазоне 0..100")
         return total * (100 - threshold_percent) // 100 - missed
@@ -53,29 +59,51 @@ class AttendanceCalculator:
 
     @staticmethod
     def get_icon(level: WarningLevel) -> str:
-        return {WarningLevel.OK: "",
-                WarningLevel.WARNING: "⚠️",
-                WarningLevel.BELOW_THRESHOLD: "❌"}[level]
+        if level == WarningLevel.BELOW_THRESHOLD:
+            return "❌"
+        if level == WarningLevel.WARNING:
+            return "⚠️"
+        return ""
 
     @staticmethod
     def calculate(lessons: list[Lesson], records: list[AttendanceRecord],
                   threshold_percent: int, now: datetime) -> AttendanceStats:
-        """Статистика одного студента.
+        """Статистика одного студента по одному курсу.
 
-        lessons - все занятия курса за период (в т.ч. будущие: от них зависит total);
-        records - записи этого студента (лишние, не из lessons, игнорируются).
+        lessons - все занятия курса за период (в т.ч. будущие);
+        records - записи студента; записи других курсов пропускаются.
         """
-        own = {l.pk for l in lessons}
-        counted = [r for r in records
-                   if r.lesson_id in own and r.status != AttendanceStatus.NOT_MARKED]
-        present = sum(1 for r in counted if r.status == AttendanceStatus.PRESENT)
-        missed = sum(1 for r in counted if r.status == AttendanceStatus.ABSENT)
-        marked_lessons = {r.lesson_id for r in counted}
-        not_marked = sum(1 for l in lessons if l.has_started(now) and l.pk not in marked_lessons)
-        total = len(lessons)
-        allowed = AttendanceCalculator.allowed_misses(total, missed, threshold_percent)
+        course_lesson_ids = {lesson.pk for lesson in lessons}
+
+        present = 0
+        missed = 0
+        marked_lesson_ids = set()
+        for record in records:
+            if record.lesson_id not in course_lesson_ids:
+                continue
+            if record.status == AttendanceStatus.PRESENT:
+                present += 1
+            elif record.status == AttendanceStatus.ABSENT:
+                missed += 1
+            else:
+                continue  # NOT_MARKED не считается
+            marked_lesson_ids.add(record.lesson_id)
+
+        not_marked = 0
+        for lesson in lessons:
+            if lesson.has_started(now) and lesson.pk not in marked_lesson_ids:
+                not_marked += 1
+
+        marked = present + missed
+        allowed = AttendanceCalculator.allowed_misses(len(lessons), missed, threshold_percent)
+
         return AttendanceStats(
-            total=total, marked=present + missed, present=present, missed=missed,
+            total=len(lessons),
+            marked=marked,
+            present=present,
+            missed=missed,
             not_marked=not_marked,
-            percent=AttendanceCalculator.current_percent(present + missed, missed),
-            allowed_misses=allowed, level=AttendanceCalculator.get_level(allowed))
+            percent=AttendanceCalculator.current_percent(marked, missed),
+            allowed_misses=allowed,
+            level=AttendanceCalculator.get_level(allowed),
+        )
