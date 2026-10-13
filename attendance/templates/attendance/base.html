@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Посещаемость{% endblock %}</title>
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #f4f5f7; color: #222; }
+    header { background: #2b4c7e; color: #fff; padding: 10px 16px;
+             display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    header a { color: #fff; text-decoration: none; }
+    header .brand { font-weight: bold; margin-right: auto; }
+    header form { margin: 0; }
+    header button { color: #fff; background: none; border: 1px solid #fff8; border-radius: 4px;
+                    padding: 4px 10px; cursor: pointer; font: inherit; }
+    main { max-width: 860px; margin: 0 auto; padding: 16px; }
+    .card { background: #fff; border-radius: 6px; padding: 16px; margin-bottom: 16px;
+            box-shadow: 0 1px 2px #0002; }
+    .msg.error { background: #fde2e1; padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; }
+    .muted { color: #777; }
+    .btn { background: #2b4c7e; color: #fff; border: 0; border-radius: 4px;
+           padding: 8px 14px; cursor: pointer; font: inherit; }
+    input[type=text], input[type=password] { width: 100%; box-sizing: border-box;
+           padding: 8px; border: 1px solid #bbb; border-radius: 4px; font: inherit; }
+  </style>
+</head>
+<body>
+<header>
+  <a class="brand" href="{% url 'home' %}">Учёт посещаемости</a>
+  {% if user.is_authenticated %}
+    <span>Вошёл как {{ nav_name }}{% if nav_role %}, {{ nav_role }}{% endif %}</span>
+    <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button>Выйти</button></form>
+  {% endif %}
+</header>
+<main>
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

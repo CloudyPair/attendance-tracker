@@ -34,6 +34,9 @@ enum WarningLevel {
 ' ================= Модуль: сайт (Django) =================
 package "Модуль: сайт (attendance/views.py)" {
   class WebViews {
+    +login_page()
+    +logout()
+    +home_page()
     +marking_page()
     +my_attendance_page()
     +disputes_page()

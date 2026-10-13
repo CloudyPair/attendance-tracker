@@ -1,0 +1,8 @@
+{% extends "attendance/base.html" %}
+{% block content %}
+<div class="card">
+  <h2>Добро пожаловать, {{ user.full_name }}</h2>
+  <p class="muted">Разделы сайта появятся в следующих итерациях.</p>
+  {% if user.is_staff %}<p><a href="{% url 'admin:index' %}">Панель администратора</a></p>{% endif %}
+</div>
+{% endblock %}

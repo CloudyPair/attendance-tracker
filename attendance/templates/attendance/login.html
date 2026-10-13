@@ -1,0 +1,18 @@
+{% extends "attendance/base.html" %}
+{% block title %}Вход{% endblock %}
+{% block content %}
+<div class="card" style="max-width: 360px; margin: 40px auto;">
+  <h2>Вход</h2>
+  {% if form.errors %}
+    <div class="msg error">Неверный логин или пароль</div>
+  {% endif %}
+  <form method="post">
+    {% csrf_token %}
+    <p><label>Логин<br>{{ form.username }}</label></p>
+    <p><label>Пароль<br>{{ form.password }}</label></p>
+    <input type="hidden" name="next" value="{{ next }}">
+    <button class="btn" type="submit">Войти</button>
+  </form>
+  <p class="muted">Учётную запись выдаёт администратор.</p>
+</div>
+{% endblock %}
