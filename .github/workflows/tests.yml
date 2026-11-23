@@ -10,6 +10,29 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        database: [sqlite, postgres]
+    env:
+      DJANGO_DB_BACKEND: ${{ matrix.database }}
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_DB: flag
+      POSTGRES_USER: flag
+      POSTGRES_PASSWORD: ci-only-password
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: flag
+          POSTGRES_USER: flag
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flag -d flag"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -31,7 +54,14 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: verification-results
+          name: verification-results-${{ matrix.database }}
           path: |
             test-results.xml
             coverage.xml
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build server image
+        run: docker build --tag flag-journal:ci .

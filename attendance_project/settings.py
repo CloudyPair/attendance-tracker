@@ -15,6 +15,7 @@ import os
 
 from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
+from .database import database_settings
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -42,6 +43,11 @@ CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.getenv(
     'DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',') if origin.strip()]
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
+if os.getenv('DJANGO_TRUST_PROXY', 'false').lower() in ('1', 'true', 'yes'):
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_SSL_REDIRECT = os.getenv('DJANGO_HTTPS_REDIRECT', str(not DEBUG)).lower() in ('1', 'true', 'yes')
+SECURE_HSTS_SECONDS = 3600 if not DEBUG else 0
+NOTIFICATIONS_INLINE = os.getenv('DJANGO_INLINE_NOTIFICATIONS', 'true').lower() in ('1', 'true', 'yes')
 
 
 # Application definition
@@ -90,12 +96,7 @@ WSGI_APPLICATION = 'attendance_project.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
-}
+DATABASES = {'default': database_settings(BASE_DIR, os.environ)}
 
 
 # Password validation

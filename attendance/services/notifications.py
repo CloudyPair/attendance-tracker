@@ -2,6 +2,7 @@
 from datetime import timedelta
 import logging
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import F, Q
 
@@ -29,7 +30,7 @@ class NotificationService:
                                               student__user__is_active=True).exists()
         notification = Notification.objects.create(recipient=recipient, type=type, text=text,
             created_at=self.clock.now(), skipped=not enabled)
-        if enabled:
+        if enabled and settings.NOTIFICATIONS_INLINE:
             transaction.on_commit(lambda: self.deliver(notification.pk), robust=True)
 
     def deliver(self, notification_id: int) -> None:

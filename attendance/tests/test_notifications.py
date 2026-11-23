@@ -99,3 +99,16 @@ def test_rolled_back_action_does_not_enqueue_or_send_notice(sample):
             raise ValueError("cancel transaction")
     assert not Notification.objects.exists()
     assert channel.calls == []
+
+
+def test_server_mode_queues_without_blocking_web_on_network(sample, settings, django_capture_on_commit_callbacks):
+    settings.NOTIFICATIONS_INLINE = False
+    TelegramLink.objects.create(student=sample.member, chat_id="321", linked_at=sample.now)
+    channel = RecordingChannel()
+    service = build_services(clock=sample.clock, channel=channel).notifications
+    with django_capture_on_commit_callbacks(execute=True):
+        service.notify(sample.member, N.THRESHOLD_WARNING, "Порог")
+    assert channel.calls == []
+    assert Notification.objects.get().sent_at is None
+    service.retry_pending()
+    assert channel.calls == [("321", "Порог")]

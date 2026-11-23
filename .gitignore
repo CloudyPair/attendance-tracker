@@ -42,3 +42,5 @@ desktop.ini
 .DS_Store
 
 TP_Laboratornyie_metodichka.docx
+deploy/state/
+backups/
