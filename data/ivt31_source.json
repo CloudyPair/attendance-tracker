@@ -1,0 +1,13 @@
+{
+  "group": "ИВТ-31",
+  "semester": "Осенний семестр 2026/2027",
+  "semester_start": "01-09-2026",
+  "source": "https://miet.ru/schedule/data?group=%D0%98%D0%92%D0%A2-31",
+  "fetched_at": "2026-11-23T15:13:24.067065+00:00",
+  "parser": "https://github.com/MPSU/schedule_parser",
+  "parser_revision": "06966377465bc0b685fd35aa65f22bd59c761703",
+  "source_entries": 88,
+  "calendar_entries": 67,
+  "teacher": "Балабаев Сергей Андреевич",
+  "note": "Календарь внешнего парсера; добавлены X-TEACHER и X-GROUP из ответа API. Даты не сдвигались."
+}

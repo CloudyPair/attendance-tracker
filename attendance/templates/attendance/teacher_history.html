@@ -1,0 +1,9 @@
+{% extends 'attendance/base.html' %}
+{% load journal %}
+{% block title %}История отметок{% endblock %}
+{% block content %}
+<a class="back-link" href="{% url 'attendance:teacher' %}?{{ back_query }}">К отчету</a>
+<div class="page-heading"><div><h1>История отметок</h1><p>{{ course.subject.name|ui_text }} {{ course.group.name|ui_text }}</p></div></div>
+<div class="panel table-scroll"><table class="data-table"><thead><tr><th>Занятие</th><th>Студент</th><th>Было</th><th>Стало</th><th>Кто и когда</th><th>Причина</th></tr></thead><tbody>{% for entry in page_obj %}<tr><td>{{ entry.record.lesson.start_at|date:'d.m.Y H:i' }}</td><td>{{ entry.record.student.user.last_name|ui_text }} {{ entry.record.student.user.first_name|ui_text }}</td><td>{{ entry.get_old_status_display|ui_text }}</td><td>{{ entry.get_new_status_display|ui_text }}</td><td>{{ entry.changed_by.full_name|ui_text }}<small>{{ entry.changed_at|date:'d.m.Y H:i' }}</small></td><td>{{ entry.reason|default:'—'|ui_text }}<small>{{ entry.get_source_display|ui_text }}</small></td></tr>{% empty %}<tr><td colspan="6">В выбранном периоде изменений нет.</td></tr>{% endfor %}</tbody></table></div>
+{% if page_obj.paginator.num_pages > 1 %}<nav class="pagination" aria-label="Страницы истории">{% if page_obj.has_previous %}<a class="button secondary small" href="?{{ history_query }}&amp;page={{ page_obj.previous_page_number }}">Назад</a>{% endif %}<span>{{ page_obj.number }} из {{ page_obj.paginator.num_pages }}</span>{% if page_obj.has_next %}<a class="button secondary small" href="?{{ history_query }}&amp;page={{ page_obj.next_page_number }}">Далее</a>{% endif %}</nav>{% endif %}
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends 'attendance/base.html' %}
+{% load journal %}
+{% block title %}Моя посещаемость{% endblock %}
+{% block content %}
+<div class="page-heading"><div><span class="eyebrow">{{ current_student.group.name|ui_text }} ЛИЧНЫЙ ЖУРНАЛ</span><h1>Моя посещаемость</h1><p>Отметки, пропуски и запас до порога по каждому предмету.</p></div></div>
+<form method="get" class="panel period-filter"><div><label for="{{ period_form.start.id_for_label }}">С</label>{{ period_form.start }}</div><div><label for="{{ period_form.end.id_for_label }}">По</label>{{ period_form.end }}</div><button class="button secondary" type="submit">Применить</button><a href="{% url 'attendance:statistics' %}" class="text-link">Весь семестр</a>{% if period_form.errors %}<div class="field-errors">{{ period_form.errors|ui_text }}</div>{% endif %}</form>
+<section class="metrics" aria-label="Сводка посещаемости"><div class="metric"><span>Занятий отмечено</span><strong>{{ marked }}</strong></div><div class="metric"><span>Пропусков</span><strong>{{ missed }}</strong></div><div class="metric"><span>Прошло без отметки</span><strong>{{ unmarked }}</strong></div></section>
+<div class="section-heading"><h2>По предметам</h2><span class="text-muted">{{ reports|length }} предметов</span></div>
+<div class="panel course-list">
+  {% for report in reports %}
+  <article class="course-row">
+    <div class="course-summary">
+      <div class="course-summary-title">
+        <h3>{{ report.course.subject.name|ui_text }}</h3>
+        {% if not report.total.marked %}<span class="badge neutral">Нет отметок</span>{% elif report.total.level.value == 'BELOW_THRESHOLD' %}<span class="badge red">Порог нарушен</span>{% elif report.total.level.value == 'WARNING' %}<span class="badge amber">Мало запаса</span>{% else %}<span class="badge green">В пределах порога</span>{% endif %}
+      </div>
+      <div class="course-summary-percent"><strong>{% if report.total.marked %}{{ report.total.percent }}<small>%</small>{% else %}—{% endif %}</strong><span>Порог {{ report.course.threshold_percent }}%</span></div>
+      <dl class="course-summary-counts"><div><dt>Посещено</dt><dd>{{ report.total.present }}</dd></div><div><dt>Пропущено</dt><dd>{{ report.total.missed }}</dd></div><div><dt>Всего</dt><dd>{{ report.total.total }}</dd></div></dl>
+    </div>
+    <p class="course-recommendation">{% if report.total.allowed_misses < 0 %}Лимит пропусков превышен{% else %}Желательно пропустить не более <strong>{{ report.total.allowed_misses }}</strong> занятий{% endif %}</p>
+    <details class="attendance-types">
+      <summary>По типам занятий</summary>
+      <div class="type-table-wrapper"><table class="type-table"><thead><tr><th scope="col">Тип занятия</th><th scope="col">Был</th><th scope="col">Не был</th><th scope="col">Без отметки</th></tr></thead><tbody>{% for kind, stats in report.by_type.items %}<tr><th scope="row">{{ kind.label|ui_text }}</th><td>{{ stats.present }}</td><td>{{ stats.missed }}</td><td>{{ stats.not_marked }}</td></tr>{% endfor %}</tbody></table></div>
+    </details>
+  </article>
+  {% empty %}<div class="empty-state"><h3>Нет занятий за этот период</h3><p>Выберите другой период или откройте весь семестр.</p></div>{% endfor %}
+</div>
+<section id="attendance-journal" aria-labelledby="attendance-journal-title">
+<div class="section-heading"><h2 id="attendance-journal-title">Мои занятия</h2><span class="text-muted">{{ page_obj.paginator.count }} занятий</span></div>
+<div class="panel table-scroll"><table class="data-table"><thead><tr><th>Дата и время</th><th>Предмет</th><th>Тип</th><th>Моя отметка</th></tr></thead><tbody>{% for row in page_obj %}<tr><td class="nowrap">{{ row.lesson.start_at|date:'d.m.Y' }}<small>{{ row.lesson.start_at|date:'H:i' }}</small></td><td>{{ row.lesson.course.subject.name|ui_text }}</td><td>{{ row.lesson.get_type_display|ui_text }}</td><td><span class="badge status-{{ row.status|lower }}">{{ row.status_label|ui_text }}</span></td></tr>{% empty %}<tr><td colspan="4" class="text-muted">Нет занятий за выбранный период.</td></tr>{% endfor %}</tbody></table></div>
+{% if page_obj.paginator.num_pages > 1 %}<nav id="attendance-pagination" class="pagination" aria-label="Страницы занятий">{% if page_obj.has_previous %}<a class="button secondary small" href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={{ page_obj.previous_page_number }}#attendance-pagination">Назад</a>{% endif %}<span>{{ page_obj.number }} из {{ page_obj.paginator.num_pages }}</span>{% if page_obj.has_next %}<a class="button secondary small" href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={{ page_obj.next_page_number }}#attendance-pagination">Далее</a>{% endif %}</nav>{% endif %}
+</section>
+{% endblock %}

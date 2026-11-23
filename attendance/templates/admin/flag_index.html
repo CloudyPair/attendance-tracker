@@ -1,0 +1,8 @@
+{% extends 'admin/base_site.html' %}
+{% block content %}
+<div class="module" style="padding:20px;display:flex;gap:16px;flex-wrap:wrap">
+  <a class="button" href="{% url 'admin:attendance_group_changelist' %}">Управление группами</a>
+  <a class="button" href="{% url 'admin:attendance_teacher_changelist' %}">Управление преподавателями</a>
+</div>
+{% endblock %}
+{% block sidebar %}{% endblock %}

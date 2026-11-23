@@ -1,0 +1,10 @@
+{% extends 'attendance/base.html' %}{% load journal %}
+{% block title %}Пропуски{% endblock %}
+{% block content %}
+<div class="page-heading"><div><h1>Пропуски</h1><p>Сначала недавние занятия.</p></div></div>
+<div class="panel workflow-list">
+{% for record in page_obj %}<a class="workflow-row" href="{% url 'attendance:absence' record.pk %}"><span><strong>{{ record.lesson.course.subject.name|ui_text }}</strong><small>{{ record.lesson.start_at|date:'d.m.Y H:i' }} / {{ record.lesson.get_type_display|ui_text }}</small></span><span>Оспорить →</span></a>
+{% empty %}<p>Пропусков нет.</p>{% endfor %}
+</div>
+{% include 'attendance/workflow_pagination.html' %}
+{% endblock %}

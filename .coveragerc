@@ -1,0 +1,11 @@
+[run]
+branch = True
+source = attendance
+omit =
+    attendance/tests/*
+    attendance/migrations/*
+
+[report]
+show_missing = True
+skip_covered = True
+precision = 2

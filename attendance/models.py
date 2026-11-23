@@ -57,6 +57,7 @@ class NotificationType(models.TextChoices):
     DISPUTE_RESOLVED = "DISPUTE_RESOLVED", "Спор рассмотрен"
     DELEGATION_GRANTED = "DELEGATION_GRANTED", "Назначена замена"
     DELEGATION_REVOKED = "DELEGATION_REVOKED", "Замена отозвана"
+    DELEGATION_EXPIRED = "DELEGATION_EXPIRED", "Замена завершена"
     THRESHOLD_WARNING = "THRESHOLD_WARNING", "Приближение к порогу"
 
 
@@ -179,6 +180,8 @@ class Lesson(models.Model):
     end_at = models.DateTimeField("окончание")
     type = models.CharField("тип", max_length=10, choices=LessonType.choices)
     room = models.CharField("аудитория", max_length=50, blank=True)
+    teacher_name = models.CharField("преподаватель из расписания", max_length=255, blank=True)
+    marking_version = models.PositiveIntegerField("версия ведомости", default=0, editable=False)
 
     class Meta:
         verbose_name = "занятие"
@@ -231,14 +234,14 @@ class AttendanceRecord(models.Model):
     def __str__(self):
         return f"{self.student} - {self.lesson}: {self.get_status_display()}"
 
-    def change(self, new_status: str, by: "Student", reason: str, now: datetime,
+    def change(self, new_status: str, by: "Student | Teacher", reason: str, now: datetime,
                source: str | None = None) -> "AttendanceChange":
         """Сменить статус и записать изменение в историю (в одной транзакции).
 
         Первая отметка (из NOT_MARKED) - без причины, source = MARKING.
         Любая последующая правка требует причину, source = EDIT (или DISPUTE).
         """
-        if new_status == AttendanceStatus.NOT_MARKED:
+        if new_status not in (AttendanceStatus.PRESENT, AttendanceStatus.ABSENT):
             raise InvalidChangeError("Отметку нельзя вернуть в «не отмечено»")
         if new_status == self.status:
             raise InvalidChangeError("Статус не меняется")
@@ -246,14 +249,19 @@ class AttendanceRecord(models.Model):
         reason = (reason or "").strip()
         first_marking = self.status == AttendanceStatus.NOT_MARKED
         if first_marking:
+            if not isinstance(by, Student):
+                raise AccessDeniedError("Первую отметку ставит ответственный студент группы")
             source = ChangeSource.MARKING
         else:
             if not reason:
                 raise ReasonRequiredError("Для правки сохранённой отметки нужна причина")
             source = source or ChangeSource.EDIT
 
+        if source not in ChangeSource.values:
+            raise InvalidChangeError("Неизвестный источник изменения")
+
         entry = AttendanceChange(record=self, old_status=self.status, new_status=new_status,
-                                 changed_by=by, changed_at=now, reason=reason, source=source)
+                                 changed_by=by.user, changed_at=now, reason=reason, source=source)
         self.status = new_status
         self.last_changed_at = now
         if first_marking:
@@ -270,7 +278,7 @@ class AttendanceChange(models.Model):
                                verbose_name="отметка")
     old_status = models.CharField("было", max_length=10, choices=AttendanceStatus.choices)
     new_status = models.CharField("стало", max_length=10, choices=AttendanceStatus.choices)
-    changed_by = models.ForeignKey(Student, on_delete=models.PROTECT, related_name="+",
+    changed_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="+",
                                    verbose_name="изменил")
     changed_at = models.DateTimeField("когда", default=timezone.now)
     reason = models.TextField("причина", blank=True)
@@ -304,11 +312,12 @@ class Dispute(models.Model):
     record = models.ForeignKey(AttendanceRecord, on_delete=models.CASCADE, related_name="disputes",
                                verbose_name="отметка")
     comment = models.TextField("комментарий студента")
+    attachment = models.FileField("подтверждающий документ", upload_to="disputes/%Y/%m/", blank=True)
     status = models.CharField("статус", max_length=10, choices=DisputeStatus.choices,
                               default=DisputeStatus.OPEN)
     created_at = models.DateTimeField("создан", default=timezone.now)
     resolved_at = models.DateTimeField("рассмотрен", null=True, blank=True)
-    resolved_by = models.ForeignKey(Student, on_delete=models.SET_NULL, null=True, blank=True,
+    resolved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
                                     related_name="+", verbose_name="рассмотрел")
     resolution_comment = models.TextField("комментарий к решению", blank=True)
 
@@ -323,7 +332,7 @@ class Dispute(models.Model):
     def __str__(self):
         return f"Спор №{self.pk}: {self.get_status_display()}"
 
-    def resolve(self, fix: bool, by: "Student", comment: str, now: datetime) -> None:
+    def resolve(self, fix: bool, by: "Teacher", comment: str, now: datetime) -> None:
         """Зафиксировать решение. Саму отметку исправляет AttendanceService (source = DISPUTE)."""
         if self.status != DisputeStatus.OPEN:
             raise InvalidChangeError("Спор уже рассмотрен")
@@ -331,7 +340,7 @@ class Dispute(models.Model):
         if not fix and not comment:
             raise ReasonRequiredError("При отклонении спора нужен комментарий")
         self.status = DisputeStatus.FIXED if fix else DisputeStatus.REJECTED
-        self.resolved_by = by
+        self.resolved_by = by.user
         self.resolved_at = now
         self.resolution_comment = comment
         self.save()
@@ -346,6 +355,7 @@ class Delegation(models.Model):
     granted_at = models.DateTimeField("назначена", default=timezone.now)
     valid_until = models.DateTimeField("действует до")
     revoked_at = models.DateTimeField("отозвана", null=True, blank=True)
+    expiry_notified_at = models.DateTimeField("уведомление об окончании", null=True, blank=True)
 
     class Meta:
         verbose_name = "замена старосты"
@@ -409,6 +419,9 @@ class Notification(models.Model):
     text = models.TextField("текст")
     created_at = models.DateTimeField("создано", default=timezone.now)
     sent_at = models.DateTimeField("отправлено", null=True, blank=True)
+    attempts = models.PositiveSmallIntegerField("попытки отправки", default=0)
+    last_attempt_at = models.DateTimeField("последняя попытка", null=True, blank=True)
+    skipped = models.BooleanField("доставка отключена", default=False)
 
     class Meta:
         verbose_name = "уведомление"

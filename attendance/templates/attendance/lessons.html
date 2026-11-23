@@ -1,0 +1,34 @@
+{% extends 'attendance/base.html' %}
+{% load journal %}
+{% block title %}Занятия{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div><span class="eyebrow">{{ current_student.group.name|ui_text }} РАСПИСАНИЕ</span><h1>Занятия</h1><p>{% if is_manager %}Отмечайте группу и проверяйте заполнение журнала.{% else %}Ваше расписание и отметки посещаемости.{% endif %}</p></div>
+  <a class="button secondary" href="?date={{ today|date:'Y-m-d' }}&amp;mode=day">Сегодня</a>
+</div>
+<div class="today-summary" aria-label="Пар отмечено сегодня"><span>Пар отмечено</span><strong>{{ today_completed|default:0 }}/{{ today_total|default:0 }}</strong></div>
+<section class="panel schedule-panel">
+  <div class="panel-toolbar">
+    <div class="schedule-switch">
+      <div class="segmented-links"><a class="{% if mode != 'week' %}selected{% endif %}" href="?date={{ selected_date|date:'Y-m-d' }}&amp;mode=day">День</a><a class="{% if mode == 'week' %}selected{% endif %}" href="?date={{ selected_date|date:'Y-m-d' }}&amp;mode=week">Неделя</a></div>
+      {% if mode == 'week' and week_type %}<span class="badge blue" aria-label="Тип недели {{ week_type }}">{{ week_type }}</span>{% endif %}
+    </div>
+    <form class="date-filter" method="get"><label for="{{ filter_form.date.id_for_label }}">Дата</label>{{ filter_form.date }}<input type="hidden" name="mode" value="{{ mode|default:'day' }}"><button type="submit" class="button secondary small">Показать</button></form>
+  </div>
+  {% if filter_form.errors %}<div class="notice error" role="alert">{{ filter_form.errors|ui_text }}</div>{% endif %}
+  {% if selected_date %}<div class="period-navigation"><span class="text-muted">{% if mode == 'week' %}{{ period_start|date:'j E' }} — {{ period_end|date:'j E Y' }}{% endif %}</span><div class="date-navigation"><a aria-label="Предыдущий период" href="?date={{ previous_date|date:'Y-m-d' }}&amp;mode={{ mode }}">Раньше</a><a aria-label="Следующий период" href="?date={{ next_date|date:'Y-m-d' }}&amp;mode={{ mode }}">Позже</a></div></div>{% endif %}
+  {% for day in days %}
+  <section class="schedule-day" aria-labelledby="day-{{ day.date|date:'Y-m-d' }}">
+    <div class="date-heading"><div><h2 id="day-{{ day.date|date:'Y-m-d' }}">{{ day.date|date:'l, j E'|capfirst }}</h2>{% if day.date == today %}<span class="badge blue">Сегодня</span>{% endif %}</div></div>
+    {% for row in day.lessons %}
+    <article class="lesson-card">
+      <div class="lesson-time"><strong>{{ row.lesson.start_at|date:'H:i' }}</strong><span>{{ row.lesson.end_at|date:'H:i' }}</span></div>
+      <div class="lesson-info"><span class="lesson-kind kind-{{ row.lesson.type|lower }}">{{ row.lesson.get_type_display|ui_text }}</span><h3>{{ row.lesson.course.subject.name|ui_text }}</h3><div class="lesson-meta"><span>Ауд. {{ row.lesson.room|default:'не указана'|ui_text }}</span>{% if row.lesson.teacher_name %}<span>{{ row.lesson.teacher_name|ui_text }}</span>{% elif row.lesson.teacher %}<span>{{ row.lesson.teacher|ui_text }}</span>{% endif %}</div></div>
+      <div class="lesson-action">{% if is_manager %}<span class="text-muted">Отмечено {{ row.marked_students }} из {{ row.total_students }}</span>{% if row.can_mark %}<a class="button {% if row.marked_students == row.total_students %}secondary{% else %}primary{% endif %}" href="{% url 'attendance:marking' row.lesson.pk %}">{% if row.marked_students %}Открыть ведомость{% else %}Отметить группу{% endif %}</a>{% else %}<span class="badge neutral">Отметка закрыта</span>{% endif %}{% else %}<span class="badge status-{{ row.status|lower }}">{{ row.status_label|ui_text }}</span>{% endif %}</div>
+    </article>
+    {% empty %}<p class="day-empty">Пар нет.</p>{% endfor %}
+  </section>
+  {% endfor %}
+</section>
+{% if is_manager %}<p class="footnote">Отмечать и исправлять посещаемость можно в день занятия до 00:00 по московскому времени.</p>{% endif %}
+{% endblock %}

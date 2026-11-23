@@ -1,0 +1,4 @@
+{% extends 'attendance/base.html' %}
+{% load journal %}
+{% block title %}Нет доступа{% endblock %}
+{% block content %}<div class="panel empty-state"><h1>Нет доступа</h1><p>{{ exception|default:'У вас нет права открывать эту страницу.'|ui_text }}</p><a class="button secondary" href="{% url 'attendance:lessons' %}">К занятиям</a></div>{% endblock %}

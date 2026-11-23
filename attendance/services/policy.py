@@ -7,7 +7,7 @@ from attendance.models import (AttendanceRecord, AttendanceStatus, Course, Dispu
 
 class AccessPolicy:
     def can_mark(self, user: Student, lesson: Lesson, now: datetime) -> bool:
-        if not user.belongs_to(lesson.course.group):
+        if not isinstance(user, Student) or not user.belongs_to(lesson.course.group):
             return False
         has_role = user.is_headman_or_deputy() or user.has_active_delegation(now)
         return has_role and lesson.is_marking_window_open(now)
@@ -22,11 +22,10 @@ class AccessPolicy:
                 and delegate.role == GroupRole.MEMBER
                 and not delegate.has_active_delegation(now))
 
-    def can_resolve_dispute(self, user: Student, dispute: Dispute) -> bool:
-        disputant = dispute.record.student
-        return (user.is_headman_or_deputy()
-                and user.pk != disputant.pk
-                and user.belongs_to(disputant.group))
+    def can_resolve_dispute(self, user: Teacher, dispute: Dispute) -> bool:
+        return (isinstance(user, Teacher)
+                and user.user_id != dispute.record.student.user_id
+                and self.can_view_course(user, dispute.record.lesson.course))
 
     def can_view_course(self, teacher: Teacher, course: Course) -> bool:
         return course.teachers.filter(pk=teacher.pk).exists()

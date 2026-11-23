@@ -8,6 +8,7 @@
     services = build_services(clock=FakeClock(...), channel=FakeChannel())
 """
 from dataclasses import dataclass
+from django.conf import settings
 
 from .attendance import AttendanceService
 from .calculator import AttendanceCalculator, AttendanceStats, WarningLevel
@@ -19,10 +20,11 @@ from .exporters import EXPORTERS, CsvExporter, PdfExporter, XlsxExporter
 from .interfaces import IClock, INotificationChannel, IReportExporter
 from .notifications import NotificationService, NullChannel
 from .policy import AccessPolicy
-from .reports import CourseReport, ReportRow
+from .reports import CourseReport, LessonSummary, ReportRow, StudentCourseReport
 from .schedule_import import ImportResult, ScheduleImporter
 from .statistics import StatisticsService
 from .telegram_link import TelegramLinkService
+from .telegram_channel import TelegramChannel
 
 
 @dataclass(frozen=True)
@@ -39,7 +41,9 @@ class Services:
 def build_services(clock: IClock | None = None, channel: INotificationChannel | None = None) -> Services:
     clock = clock or DjangoClock()
     policy = AccessPolicy()
-    notifications = NotificationService(clock, channel or NullChannel())
+    if channel is None:
+        channel = TelegramChannel() if settings.TELEGRAM_BOT_TOKEN else NullChannel()
+    notifications = NotificationService(clock, channel)
     statistics = StatisticsService(clock, policy)
     attendance = AttendanceService(clock, policy, statistics, notifications)
     return Services(

@@ -1,0 +1,9 @@
+{% extends 'attendance/base.html' %}{% load journal %}
+{% block title %}Замена старосты{% endblock %}
+{% block content %}
+<div class="page-heading"><div><h1>Замена старосты</h1><p>Право отмечать группу действует до 00:00.</p></div></div>
+{% if can_assign %}<section class="panel workflow-form"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="assign"><label for="delegate-id">Студент группы</label><select id="delegate-id" name="delegate_id" required><option value="">Выберите студента</option>{% for student in candidates %}<option value="{{ student.pk }}">{{ student.user.full_name|ui_text }}</option>{% endfor %}</select><button class="button" type="submit">Назначить до 00:00</button></form></section>{% endif %}
+<div class="panel workflow-list">
+{% for delegation in delegations %}<div class="workflow-row"><span><strong>{{ delegation.delegate.user.full_name|ui_text }}</strong><small>До {{ delegation.valid_until|date:'d.m.Y H:i' }} / Назначил {{ delegation.granted_by.user.full_name|ui_text }}</small></span>{% if can_assign %}<form method="post">{% csrf_token %}<input type="hidden" name="delegation_id" value="{{ delegation.pk }}"><button class="button secondary small" name="action" value="revoke">Отозвать</button></form>{% endif %}</div>{% empty %}<p>Действующих замен нет.</p>{% endfor %}
+</div>
+{% endblock %}

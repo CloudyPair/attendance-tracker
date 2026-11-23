@@ -8,6 +8,7 @@
 """
 import sys
 from datetime import datetime, timedelta
+from uuid import uuid4
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -60,10 +61,11 @@ class Command(BaseCommand):
         self.now = datetime(2026, 9, 29, 12, 0, tzinfo=self.tz)
         self.policy = AccessPolicy()
 
-        group = Group.objects.create(name="ИВТ-31")
+        suffix = uuid4().hex[:8]
+        group = Group.objects.create(name=f"ИВТ-31 (ЛР2 {suffix})")
 
         def student(login, name, role=GroupRole.MEMBER):
-            user = User.objects.create(username=login, last_name=name)
+            user = User.objects.create(username=f"lab2_{suffix}_{login}", last_name=name)
             return Student.objects.create(user=user, group=group, role=role)
 
         self.ivanov = student("ivanov", "Иванов (староста)", GroupRole.HEADMAN)
@@ -74,10 +76,10 @@ class Command(BaseCommand):
         self.kuznetsov = student("kuznetsov", "Кузнецов")
         self.students = [self.ivanov, self.petrova, self.sidorov, self.kuznetsov]
 
-        self.teacher = Teacher.objects.create(user=User.objects.create(username="teacher", last_name="Преподаватель А."))
-        self.stranger = Teacher.objects.create(user=User.objects.create(username="stranger", last_name="Чужой"))
+        self.teacher = Teacher.objects.create(user=User.objects.create(username=f"lab2_{suffix}_teacher", last_name="Преподаватель А."))
+        self.stranger = Teacher.objects.create(user=User.objects.create(username=f"lab2_{suffix}_stranger", last_name="Чужой"))
         self.course = Course.objects.create(group=group, semester="2026-осень",
-                                            subject=Subject.objects.create(name="Программная инженерия"))
+                                            subject=Subject.objects.create(name=f"Программная инженерия (ЛР2 {suffix})"))
         self.course.teachers.add(self.teacher)
 
         # 10 занятий: раз в неделю по вторникам, лекции и лабораторные чередуются
@@ -143,7 +145,7 @@ class Command(BaseCommand):
         print("  История изменений отметки Петровой (из БД):")
         for c in rec.changes.all():
             print(f"    {c.old_status:>10} -> {c.new_status:<10} [{c.source}] "
-                  f"кто: {c.changed_by.user.full_name}, причина: {c.reason or '-'}")
+                  f"кто: {c.changed_by.full_name}, причина: {c.reason or '-'}")
 
         print("\n=== 4. Граница окна редактирования (до 00:00 следующего дня) ===")
         for moment in (datetime(2026, 9, 29, 23, 59, 59, tzinfo=self.tz),
@@ -164,12 +166,13 @@ class Command(BaseCommand):
         dispute = Dispute.objects.create(record=disputed, comment="Я был, староста ошибся", created_at=self.now)
         print(f"  Сидоров может рассматривать спор: {yes(policy.can_resolve_dispute(sidorov, dispute))}")
         print(f"  Иванов  может рассматривать спор: {yes(policy.can_resolve_dispute(ivanov, dispute))}")
-        dispute.resolve(fix=True, by=ivanov, comment="", now=self.now)
-        last = disputed.change(P, ivanov, f"Спор №{dispute.pk}: исправлено", self.now, source=ChangeSource.DISPUTE)
+        print(f"  Преподаватель может рассматривать спор: {yes(policy.can_resolve_dispute(self.teacher, dispute))}")
+        dispute.resolve(fix=True, by=self.teacher, comment="", now=self.now)
+        last = disputed.change(P, self.teacher, f"Спор №{dispute.pk}: исправлено", self.now, source=ChangeSource.DISPUTE)
         print(f"  Спор: {dispute.status}; отметка теперь {disputed.status}; источник правки: {last.source}")
         self.show_stats("Статистика после решения спора:")
         try:
-            Dispute(record=disputed).resolve(False, ivanov, "", self.now)
+            Dispute(record=disputed).resolve(False, self.teacher, "", self.now)
         except ReasonRequiredError as e:
             print(f"  Отказ без комментария: ошибка - {e}")
 

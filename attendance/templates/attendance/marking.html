@@ -1,0 +1,25 @@
+{% extends 'attendance/base.html' %}
+{% load journal %}
+{% block title %}Отметка группы{% endblock %}
+{% block content %}
+<a class="back-link" href="{% url 'attendance:lessons' %}?date={{ lesson.start_at|date:'Y-m-d' }}">К занятиям</a>
+<div class="page-heading marking-heading"><div><span class="eyebrow">{{ lesson.course.group.name|ui_text }} {{ lesson.start_at|date:'j E, H:i' }}</span><h1>{{ lesson.course.subject.name|ui_text }}</h1><p>{{ lesson.get_type_display|ui_text }} Ауд. {{ lesson.room|default:'не указана'|ui_text }}{% if lesson.teacher_name %} {{ lesson.teacher_name|ui_text }}{% endif %}</p></div><span class="badge blue">{{ total_students }} студентов</span></div>
+{% if error_message %}<div class="notice error" role="alert">{{ error_message|ui_text }} {% if conflict %}<a href="{% url 'attendance:marking' lesson.pk %}">Обновить ведомость</a>{% endif %}</div>{% endif %}
+<form method="post" id="marking-form" class="marking-form">{% csrf_token %}{{ form.sheet }}{{ form.reason }}{{ formset.management_form }}
+  {% if formset.non_form_errors %}<div class="notice error">{{ formset.non_form_errors|ui_text }}</div>{% endif %}
+  <section class="panel roster-panel"><div class="panel-toolbar"><div><h2>Ведомость группы</h2><p class="text-muted">Выберите отметку для каждого студента.</p></div><button class="button secondary" type="button" id="mark-all">Все присутствуют</button></div>
+    <div class="roster-header"><span>Студент</span><span>Посещаемость</span></div>
+    {% for record, mark in record_forms %}<div class="marking-row" data-initial="{{ record.status }}"><div class="student-name"><span class="student-number">{{ forloop.counter|stringformat:'02d' }}</span><div><strong>{{ record.student.user.last_name|ui_text }} {{ record.student.user.first_name|ui_text }}</strong><small>{% if record.student.role != 'MEMBER' %}{{ record.student.get_role_display|ui_text }}{% else %}{{ record.student.user.username|ui_text }}{% endif %}</small></div></div>{{ mark.student_id }}{{ mark.change_reason }}<fieldset class="mark-options"><legend class="sr-only">Отметка: {{ record.student.user.full_name|ui_text }}</legend>{% for radio in mark.status %}<label class="mark-option option-{{ radio.data.value|lower }}">{{ radio.tag }}<span>{% if radio.data.value == 'PRESENT' %}Был{% elif radio.data.value == 'ABSENT' %}Не был{% else %}Не отмечен{% endif %}</span></label>{% endfor %}</fieldset>{% if mark.errors %}<div class="field-errors">{{ mark.errors|ui_text }}</div>{% endif %}</div>{% endfor %}
+  </section>
+  <div class="save-bar"><div class="mark-counters" aria-live="polite"><span><i class="counter-present"></i>Были <strong id="present-count">0</strong></span><span><i class="counter-absent"></i>Не были <strong id="absent-count">0</strong></span><span class="unmarked-counter">Без отметки <strong id="unmarked-count">0</strong></span></div><button class="button primary" type="submit" {% if conflict %}disabled{% endif %}>Сохранить отметки</button></div>
+</form>
+<dialog id="correction-dialog" class="correction-dialog" aria-labelledby="correction-title" aria-describedby="correction-student">
+  <form id="correction-form" method="dialog">
+    <h2 id="correction-title">Причина правки</h2>
+    <p id="correction-student" class="text-muted"></p>
+    <label for="correction-reason">Почему меняется отметка?</label>
+    <textarea id="correction-reason" rows="3" maxlength="2000" required></textarea>
+    <div class="dialog-actions"><button class="button secondary" type="button" id="correction-cancel">Отмена</button><button class="button primary" type="submit" value="apply">Подтвердить</button></div>
+  </form>
+</dialog>
+{% endblock %}

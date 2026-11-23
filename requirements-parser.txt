@@ -1,0 +1,4 @@
+-r requirements.txt
+# Только для scripts/prepare_miet_demo.py и внешнего schedule_parser.
+requests==2.34.2
+PyYAML==6.0.4

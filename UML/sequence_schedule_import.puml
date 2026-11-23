@@ -1,30 +1,35 @@
 @startuml SequenceScheduleImport
-title Последовательность: разовый импорт расписания из .ics
+title Последовательность: получение и разовый импорт расписания МИЭТ
 
 autonumber
 actor "Администратор" as A
-participant "Парсер расписания МИЭТ\n(schedule_parser)" as P
-participant "ScheduleImporter\n(команда импорта)" as I
+participant "Админка\nGroupAdmin" as UI
+participant "MietScheduleClient" as P
+participant "ScheduleImporter" as I
+participant "API МИЭТ" as API
 database "БД" as DB
 
-A -> P : запустить парсер в студенческом режиме\n(группа, дата начала семестра)
-P --> A : файл .ics на 18 недель
-
-A -> I : import_schedule(group, file.ics)
+A -> UI : ввести название группы, студентов и роли;\n«Сохранить и загрузить расписание МИЭТ»
+UI -> I : import_miet(group_id)
 I -> DB : у группы уже есть занятия?
 alt занятия уже импортированы
   I --> A : отказ: импорт разовый, повтор не поддерживается
 else первичная настройка
+  I -> P : download(group.name)
+  P -> API : GET /schedule/data?group=...
+  API --> P : семестр, пары, аудитории, TeacherFull
+  P -> P : объединить сдвоенные пары,\nсформировать ICS на 18 недель (X-TEACHER)
+  P --> I : ScheduleCalendar
   I -> I : разобрать календарь,\nразвернуть повторяющиеся события в отдельные вхождения
   I -> DB : BEGIN
   loop по каждому вхождению
     alt служебное событие парсера\n(тип и номер недели)
       I -> I : пропустить (Skipped++)
     else занятие
-      I -> I : разобрать: предмет, тип, время, аудитория, преподаватель
-      I -> DB : найти или создать Subject, Teacher
+      I -> I : разобрать: предмет, тип, время, аудитория, X-TEACHER
+      I -> DB : найти или создать Subject;\nнайти существующий профиль Teacher по ФИО (если есть)
       I -> DB : найти или создать Course (группа + предмет)
-      I -> DB : INSERT Lesson\n(external_uid = UID события + дата вхождения)
+      I -> DB : INSERT Lesson\n(teacher_name сохраняется и без учётной записи;\nexternal_uid = hash группы + UID + дата вхождения)
     end
   end
   alt ошибка разбора (в т.ч. не определён тип занятия) или записи
@@ -32,6 +37,7 @@ else первичная настройка
     I --> A : ImportResult с ошибками, ничего не сохранено
   else успешно
     I -> DB : COMMIT
+    I -> I : сохранить .ics и метаданные для скачивания
     I --> A : ImportResult (создано N занятий)
   end
 end

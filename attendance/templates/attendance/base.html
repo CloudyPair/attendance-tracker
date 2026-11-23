@@ -1,0 +1,49 @@
+{% load static journal %}
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#142238">
+  <title>{% block title %}Журнал{% endblock %} - ФЛАГ</title>
+  <link rel="icon" type="image/svg+xml" href="{% static 'attendance/favicon.svg' %}">
+  <link rel="stylesheet" href="{% static 'attendance/app.css' %}">
+  <script defer src="{% static 'attendance/app.js' %}"></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Перейти к содержимому</a>
+{% if user.is_authenticated %}
+<div class="app-shell">
+  <aside class="sidebar" aria-label="Основная навигация">
+    <a class="brand" href="{% url 'attendance:lessons' %}"><span class="brand-symbol" aria-hidden="true">Ф</span><span>ФЛАГ<small>Учет успеваемости</small></span></a>
+    <div class="sidebar-caption">УЧЕБНЫЙ ЖУРНАЛ</div>
+    <nav class="navigation">
+      {% if current_student %}
+      <a href="{% url 'attendance:lessons' %}" class="nav-link {% if active_nav == 'lessons' %}active{% endif %}" {% if active_nav == 'lessons' %}aria-current="page"{% endif %}><span aria-hidden="true">▦</span>Занятия</a>
+      <a href="{% url 'attendance:statistics' %}" class="nav-link {% if active_nav == 'statistics' %}active{% endif %}" {% if active_nav == 'statistics' %}aria-current="page"{% endif %}><span aria-hidden="true">▥</span>Моя посещаемость</a>
+      <a href="{% url 'attendance:absences' %}" class="nav-link {% if active_nav == 'absences' %}active{% endif %}"><span aria-hidden="true">−</span>Пропуски</a>
+      <a href="{% url 'attendance:disputes' %}" class="nav-link {% if active_nav == 'disputes' %}active{% endif %}"><span aria-hidden="true">?</span>Мои споры</a>
+      <a href="{% url 'attendance:delegation' %}" class="nav-link {% if active_nav == 'delegation' %}active{% endif %}"><span aria-hidden="true">⇄</span>Замена старосты</a>
+      <a href="{% url 'attendance:telegram' %}" class="nav-link {% if active_nav == 'telegram' %}active{% endif %}"><span aria-hidden="true">↗</span>Telegram</a>
+      {% endif %}
+      {% if current_teacher %}<a href="{% url 'attendance:teacher' %}" class="nav-link {% if active_nav == 'teacher' %}active{% endif %}" {% if active_nav == 'teacher' %}aria-current="page"{% endif %}><span aria-hidden="true">▤</span>Мои курсы</a><a href="{% url 'attendance:disputes' %}" class="nav-link {% if active_nav == 'disputes' %}active{% endif %}"><span aria-hidden="true">?</span>Решение споров</a>{% endif %}
+      {% if user.is_staff %}<a href="{% url 'admin:index' %}" class="nav-link"><span aria-hidden="true">⚙</span>Администрирование</a>{% endif %}
+    </nav>
+    {% if current_student %}<div class="group-label"><span class="sidebar-caption">МОЯ ГРУППА</span><strong>{{ current_student.group.name|ui_text }}</strong><span>{{ current_student.get_role_display|ui_text }}</span></div>{% endif %}
+    <div class="sidebar-account"><span class="avatar">{{ user.first_name|first|default:user.username|first|ui_text }}</span><div class="account-name"><strong><span>{{ user.last_name|ui_text }}</span><span>{{ user.first_name|ui_text }}</span></strong><small>{{ user.username|ui_text }}</small></div></div>
+    <form method="post" action="{% url 'attendance:logout' %}" class="logout-form">{% csrf_token %}<button type="submit">Выйти из аккаунта</button></form>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><span>Электронный журнал</span><span class="topbar-date">{% now "j E Y" %}</span></header>
+    <main id="main" class="main-content">
+      {% for message in messages %}<div class="notice {{ message.tags }}" role="status">{{ message|ui_text }}</div>{% endfor %}
+      {% block content %}{% endblock %}
+    </main>
+    <footer class="page-footer">ФЛАГ<span>Учет успеваемости</span></footer>
+  </div>
+</div>
+{% else %}
+<main id="main">{% block public_content %}{% endblock %}</main>
+{% endif %}
+</body>
+</html>

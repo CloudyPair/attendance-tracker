@@ -1,0 +1,14 @@
+{% extends 'attendance/base.html' %}
+{% block title %}Вход{% endblock %}
+{% block public_content %}
+<div class="login-layout">
+  <section class="login-form-panel"><div class="login-box"><h1>Войти в журнал</h1>
+    {% if form.errors %}<div class="notice error" role="alert">Не удалось войти. Проверьте логин и пароль.</div>{% endif %}
+    <form method="post" class="login-form">{% csrf_token %}
+      <label for="id_username">Логин</label><input id="id_username" name="username" type="text" value="{{ form.username.value|default:'' }}" autocomplete="username" required autofocus>
+      <label for="id_password">Пароль</label><input id="id_password" name="password" type="password" autocomplete="current-password" required>
+      <input type="hidden" name="next" value="{{ next }}"><button class="button primary full-width" type="submit">Войти</button>
+    </form>
+  </div></section>
+</div>
+{% endblock %}

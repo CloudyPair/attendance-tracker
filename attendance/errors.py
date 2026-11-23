@@ -15,3 +15,7 @@ class InvalidChangeError(DomainError):
 
 class ReasonRequiredError(DomainError):
     """Не указана обязательная причина (правка отметки, отказ по спору)."""
+
+
+class ConcurrentChangeError(DomainError):
+    """Открытая форма устарела после сохранения другим пользователем."""

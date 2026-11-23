@@ -48,6 +48,7 @@ enum NotificationType {
   DISPUTE_RESOLVED
   DELEGATION_GRANTED
   DELEGATION_REVOKED
+  DELEGATION_EXPIRED
   THRESHOLD_WARNING
 }
 
@@ -91,6 +92,8 @@ class Lesson {
   +end_at: datetime
   +type: LessonType
   +room: str
+  +teacher_name: str
+  +marking_version: int = 0
   +window_opens_at(): datetime
   +edit_deadline(): datetime
   +is_marking_window_open(now: datetime): bool
@@ -102,7 +105,7 @@ class AttendanceRecord {
   +status: AttendanceStatus = NOT_MARKED
   +marked_at: datetime [0..1]
   +last_changed_at: datetime [0..1]
-  +change(new_status: AttendanceStatus, by: Student, reason: str, now: datetime, source: ChangeSource = None): AttendanceChange
+  +change(new_status: AttendanceStatus, by: Student | Teacher, reason: str, now: datetime, source: ChangeSource = None): AttendanceChange
 }
 
 class AttendanceChange {
@@ -121,11 +124,12 @@ class AbsenceReason {
 
 class Dispute {
   +comment: str
+  +attachment: file [0..1]
   +status: DisputeStatus = OPEN
   +created_at: datetime
   +resolved_at: datetime [0..1]
   +resolution_comment: str
-  +resolve(fix: bool, by: Student, comment: str, now: datetime): None
+  +resolve(fix: bool, by: Teacher, comment: str, now: datetime): None
 }
 
 ' ================= Замена старосты =================
@@ -133,6 +137,7 @@ class Delegation {
   +granted_at: datetime
   +valid_until: datetime
   +revoked_at: datetime [0..1]
+  +expiry_notified_at: datetime [0..1]
   +is_active(now: datetime): bool
   +revoke(by: Student, now: datetime): None
 }
@@ -156,6 +161,9 @@ class Notification {
   +text: str
   +created_at: datetime
   +sent_at: datetime [0..1]
+  +attempts: int = 0
+  +last_attempt_at: datetime [0..1]
+  +skipped: bool = False
 }
 
 ' ================= Учётная запись и профили =================
@@ -175,10 +183,10 @@ Lesson "1" *-- "0..*" AttendanceRecord : lesson
 Student "1" -- "0..*" AttendanceRecord : student
 AttendanceRecord "0..*" -- "0..1" Student : marked_by
 AttendanceRecord "1" *-- "0..*" AttendanceChange : record
-AttendanceChange "0..*" -- "1" Student : changed_by
+AttendanceChange "0..*" -- "1" User : changed_by
 AttendanceRecord "1" *-- "0..1" AbsenceReason : record
 AttendanceRecord "1" *-- "0..*" Dispute : record
-Dispute "0..*" -- "0..1" Student : resolved_by
+Dispute "0..*" -- "0..1" User : resolved_by
 
 ' ================= Замена =================
 Delegation "0..*" -- "1" Student : delegate

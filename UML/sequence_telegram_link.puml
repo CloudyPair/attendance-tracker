@@ -10,7 +10,7 @@ database "БД" as DB
 
 S -> UI : войти на сайт → «Привязать Telegram»
 UI -> API : create_link_token(student)
-API -> DB : INSERT LinkToken(token, expires_at = now + TTL)
+API -> DB : погасить прежние неиспользованные токены студента;\nINSERT LinkToken(token, expires_at = now + 15 минут)
 API --> UI : ссылка t.me/<bot>?start=<token>
 UI --> S : показать ссылку / кнопку
 
@@ -21,11 +21,22 @@ alt токен не найден, просрочен или уже исполь�
   API --> Bot : ошибка
   Bot --> S : «Ссылка недействительна, получите новую на сайте»
 else токен действителен
-  API -> DB : INSERT TelegramLink(chat_id, linked_at)
-  API -> DB : UPDATE LinkToken SET used_at = now
+  note over API, DB : Транзакция, блокировка студента, личный chat_id > 0.\nЧат другого студента не перехватывается.
+  API -> DB : UPDATE LinkToken SET used_at = now\nWHERE unused AND expires_at > now (ровно 1 строка)
+  API -> DB : INSERT / UPDATE TelegramLink(chat_id, linked_at)
   API --> Bot : студент, роль в группе
   Bot --> S : «Аккаунт привязан. Ваша роль: студент / староста»
 end
+
+S -> UI : отключить уведомления / отвязать Telegram
+UI -> API : set_notifications(student, false) / unlink(student)
+API -> DB : изменить / удалить TelegramLink,\nотменить ожидающие уведомления и токены при отвязке
+
+S -> Bot : /logout или «Выйти из аккаунта»
+Bot -> API : unlink_chat(chat_id)
+API -> DB : заблокировать студента и повторно проверить chat_id;\nудалить TelegramLink, погасить токены, отменить ожидающие уведомления
+API --> Bot : выход выполнен (повторный выход допустим)
+Bot --> S : «Вы вышли из аккаунта. Для входа получите новую ссылку на сайте»
 
 
 @enduml

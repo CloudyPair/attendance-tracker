@@ -36,7 +36,7 @@ rectangle "Система учёта посещаемости" {
   }
 
   package "Причины и оспаривание" {
-    usecase "Указать причину пропуска" as UC_Reason
+    usecase "Объяснить заявку\nи приложить документ" as UC_Reason
     usecase "Оспорить отметку" as UC_Dispute
     usecase "Рассмотреть оспаривание" as UC_Resolve
     usecase "Исправить отметку\nпо оспариванию" as UC_Fix
@@ -87,7 +87,6 @@ rectangle "Система учёта посещаемости" {
 Student -- UC_Login
 Student -- UC_MyLessons
 Student -- UC_MyStats
-Student -- UC_Reason
 Student -- UC_Dispute
 Student -- UC_Link
 Student -- UC_Notif
@@ -101,10 +100,10 @@ Marker -- UC_GroupLow
 ' ---------- Староста и заместитель ----------
 Headman -- UC_Assign
 Headman -- UC_Revoke
-Headman -- UC_Resolve
 
 ' ---------- Преподаватель ----------
 Teacher -- UC_Login
+Teacher -- UC_Resolve
 Teacher -- UC_PickCourse
 Teacher -- UC_TeacherStats
 Teacher -- UC_TeacherHistory
@@ -144,8 +143,7 @@ UC_Warn ..> UC_Mark : <<extend>>
 UC_Warn ..> UC_Notify : <<include>>
 
 ' Причины и оспаривание
-UC_Dispute ..> UC_Notify : <<include>>
-UC_Reason ..> UC_MyLessons : <<extend>>
+UC_Dispute ..> UC_Reason : <<include>>
 UC_Dispute ..> UC_MyLessons : <<extend>>
 UC_Fix ..> UC_Resolve : <<extend>>
 UC_Reject ..> UC_Resolve : <<extend>>

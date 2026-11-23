@@ -34,8 +34,13 @@ opt быстрая отметка (на стороне интерфейса)
   M -> UI : «Все присутствуют»
   UI --> M : все в статусе PRESENT (пока не сохранено)
 end
-M -> UI : скорректировать исключения (ABSENT)\nи нажать «Сохранить»
-UI -> AS : save_marks(user, lesson_id, marks, reason)
+M -> UI : выбрать отметку студента
+opt меняется сохраненная отметка
+  UI --> M : всплывающее окно «Причина правки»
+  M -> UI : подтвердить причину или отменить изменение
+end
+M -> UI : нажать «Сохранить»
+UI -> AS : save_marks(user, lesson_id, marks, reason, expected_version, reasons)
 AS -> AP : can_mark(user, lesson, now);\ncan_edit(user, record, now) для уже отмеченных
 AP --> AS : результат
 
@@ -48,11 +53,12 @@ else меняется уже отмеченная запись, а причин�
 else проверки пройдены
   AS -> ST : уровень предупреждения до сохранения
   AS -> DB : BEGIN
+  AS -> DB : проверить marking_version и состав группы;\nUPDATE Lesson SET marking_version = version + 1\nWHERE marking_version = expected_version
   loop по каждой изменённой записи
     AS -> DB : UPDATE AttendanceRecord (status, marked_at)
     AS -> DB : INSERT AttendanceChange\n(old, new, changed_by, at, reason, source)
   end
-  alt нарушено ограничение уникальности\nили другая ошибка
+  alt версия изменилась, нарушено ограничение\nили ошибка записи
     AS -> DB : ROLLBACK
     AS --> UI : «Данные изменились, обновите страницу»
     UI --> M : сообщение об ошибке

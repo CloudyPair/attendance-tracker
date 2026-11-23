@@ -1,0 +1,7 @@
+{% extends 'admin/base_site.html' %}
+{% block content %}
+<p><a href="{% url 'admin:attendance_group_change' group.pk %}">К группе {{ group.name }}</a></p>
+{% if has_schedule %}<p>Расписание уже есть. <a href="?download=1">Скачать .ics</a></p>{% else %}
+<form method="post">{% csrf_token %}{{ form.as_p }}<input type="submit" value="Получить расписание из МИЭТ"></form>
+{% endif %}
+{% endblock %}

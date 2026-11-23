@@ -1,8 +1,7 @@
-# Path to PlantUML JAR
-$PlantUmlJar = "C:\Users\Alex\AppData\Roaming\Code\User\globalStorage\justuskarlsson.plan-uml\plantuml-1.2025.10.jar"
+param([string]$PlantUmlJar = $env:PLANTUML_JAR)
 
 # Root directory: current directory
-$Root = Get-Location
+$Root = $PSScriptRoot
 
 # Check Java
 try {

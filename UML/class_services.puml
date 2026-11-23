@@ -24,6 +24,8 @@ class Delegation <<model>>
 class LinkToken <<model>>
 class TelegramLink <<model>>
 class Notification <<model>>
+class User <<model>>
+class Group <<model>>
 
 enum WarningLevel {
   OK
@@ -34,24 +36,29 @@ enum WarningLevel {
 ' ================= Модуль: сайт (Django) =================
 package "Модуль: сайт (attendance/views.py)" {
   class WebViews {
+    +lessons_page()
     +marking_page()
     +my_attendance_page()
+    +absences_page()
+    +absence_page(record_id: int)
+    +absence_attachment(reason_id: int)
+    +dispute_attachment(dispute_id: int)
     +disputes_page()
+    +delegation_page()
     +teacher_stats_page()
-    +export_download(format: str)
+    +teacher_history_page(course_id: int, student_id: int)
     +telegram_link_page()
   }
 }
 
 ' ================= Модуль: Telegram-бот (aiogram) =================
 package "Модуль: Telegram-бот (aiogram)" {
-  class BotHandlers {
-    +on_start(token: str, chat_id: str)
-    +on_show_attendance(chat_id: str)
-    +on_dispute(chat_id: str, record_id: int, comment: str)
-    +on_resolve_dispute(chat_id: str, dispute_id: int, fix: bool, comment: str)
-    +on_assign_delegate(chat_id: str, delegate_id: int)
-    +on_revoke_delegate(chat_id: str, delegation_id: int)
+  class BotHandlers <<module telegram_bot.py>> {
+    +make_router(): Router
+    +screen(chat_id: str, action: str, number: int): tuple
+    +mutate(chat_id: str, action: str, object_id: int, text: str, attachment): tuple
+    +run_bot(on_ready): None
+    +maintenance(): None
   }
 
   class TelegramChannel {
@@ -62,7 +69,9 @@ package "Модуль: Telegram-бот (aiogram)" {
 ' ================= Модуль: импорт расписания =================
 package "Модуль: импорт расписания (manage.py import_schedule)" {
   class ScheduleImporter {
-    +import_ics(file: BinaryIO, group_id: int): ImportResult
+    +import_miet(group_id: int, source_name: str = ""): ImportResult
+    -_store_calendar(group: Group, content: bytes, semester: str, semester_start: date, source: str): None
+    +import_ics(file: BinaryIO, group_id: int, semester: str): ImportResult
     -_expand_recurrence(vevent): list
     -_is_service_event(vevent): bool
     -_parse_occurrence(vevent): dict
@@ -73,10 +82,27 @@ package "Модуль: импорт расписания (manage.py import_sched
     +skipped: int
     +errors: list[str]
   }
+
+  class MietScheduleClient {
+    +download(group_name: str): ScheduleCalendar
+    +build_calendar(payload: dict, group_name: str, source: str): ScheduleCalendar
+  }
+
+  class ScheduleCalendar <<value object>> {
+    +content: bytes
+    +semester: str
+    +semester_start: date
+    +source: str
+  }
 }
 
 ' ================= Ядро: сервисы (attendance/services) =================
 package "Ядро (attendance/services)" {
+
+  class AdministrationService {
+    +delete_group(actor: User, group: Group): None
+    +delete_teacher(actor: User, teacher: Teacher): None
+  }
 
   interface IClock {
     +now(): datetime
@@ -113,25 +139,39 @@ package "Ядро (attendance/services)" {
     +can_mark(user: Student, lesson: Lesson, now: datetime): bool
     +can_edit(user: Student, record: AttendanceRecord, now: datetime): bool
     +can_assign_delegate(grantor: Student, delegate: Student, now: datetime): bool
-    +can_resolve_dispute(user: Student, dispute: Dispute): bool
+    +can_resolve_dispute(user: Teacher, dispute: Dispute): bool
     +can_view_course(teacher: Teacher, course: Course): bool
     +can_set_threshold(teacher: Teacher, course: Course): bool
   }
 
   class AttendanceService {
     +open_lesson(user: Student, lesson_id: int): list[AttendanceRecord]
-    +save_marks(user: Student, lesson_id: int, marks: dict[int, AttendanceStatus], reason: str): None
-    +correct_record(actor: Student, record_id: int, new_status: AttendanceStatus, reason: str, source: ChangeSource): None
+    +save_marks(user: Student, lesson_id: int, marks: dict[int, AttendanceStatus], reason: str, expected_version: int, reasons: dict[int, str] = None): None
+    +correct_record(actor: Student | Teacher, record_id: int, new_status: AttendanceStatus, reason: str, source: ChangeSource): None
     +get_unmarked_lessons(user: Student): list[Lesson]
+    +lessons_for_student(user: Student, from_: datetime, to: datetime): list[LessonSummary]
+    +lesson_for_marking(user: Student, lesson_id: int): Lesson
+    +is_responsible(user: Student): bool
   }
 
   class DisputeService {
-    +set_absence_reason(student: Student, record_id: int, text: str): None
-    +create(student: Student, record_id: int, comment: str): Dispute
-    +resolve(resolver: Student, dispute_id: int, fix: bool, comment: str): None
+    +set_absence_reason(student: Student, record_id: int, text: str, attachment = None): None
+    +own_record(student: Student, record_id: int): AttendanceRecord
+    +absences(student: Student): list[AttendanceRecord]
+    +attachment_for(user: User, reason_id: int): FieldFile
+    +attachment_for_dispute(user: User, dispute_id: int): FieldFile
+    +list_for(actor: Student | Teacher): list[Dispute]
+    +can_resolve(teacher: Teacher, dispute: Dispute): bool
+    +can_delete(teacher: Teacher, dispute: Dispute): bool
+    +delete(teacher: Teacher, dispute_id: int): None
+    +create(student: Student, record_id: int, comment: str, attachment = None): Dispute
+    +resolve(resolver: Teacher, dispute_id: int, fix: bool, comment: str): None
   }
 
   class DelegationService {
+    +candidates(grantor: Student): list[Student]
+    +active_for(student: Student): list[Delegation]
+    +assign_by_id(grantor: Student, delegate_id: int): Delegation
     +assign(grantor: Student, delegate: Student): Delegation
     +revoke(grantor: Student, delegation_id: int): None
     +notify_expired(now: datetime): None
@@ -139,10 +179,15 @@ package "Ядро (attendance/services)" {
 
   class CourseService {
     +set_threshold(teacher: Teacher, course_id: int, percent: int): None
+    +for_teacher(teacher: Teacher): list[Course]
   }
 
   class StatisticsService {
-    +for_student(student: Student, from_: datetime, to: datetime): list[AttendanceStats]
+    +for_student(student: Student, from_: datetime, to: datetime): list[StudentCourseReport]
+    +for_student_course(student: Student, course: Course): AttendanceStats
+    +period_for_student(student: Student): tuple[datetime, datetime]
+    +period_for_course(teacher: Teacher, course: Course): tuple[datetime, datetime]
+    +get_student_history(teacher: Teacher, course: Course, student_id: int, from_: datetime, to: datetime): list[AttendanceChange]
     +for_course(teacher: Teacher, course: Course, from_: datetime, to: datetime): CourseReport
     +students_below_threshold(group_id: int): list[Student]
     +get_record_history(teacher: Teacher, record_id: int): list[AttendanceChange]
@@ -161,6 +206,22 @@ package "Ядро (attendance/services)" {
     +by_type: dict[LessonType, AttendanceStats]
     +total: AttendanceStats
     +reasons: list[str]
+    +attachments: list[AbsenceReason]
+  }
+
+  class StudentCourseReport <<value object>> {
+    +course: Course
+    +total: AttendanceStats
+    +by_type: dict[LessonType, AttendanceStats]
+  }
+
+  class LessonSummary <<value object>> {
+    +lesson: Lesson
+    +status: AttendanceStatus
+    +marked_students: int
+    +total_students: int
+    +can_mark: bool
+    +status_label: str {readOnly}
   }
 
   interface IReportExporter {
@@ -175,11 +236,18 @@ package "Ядро (attendance/services)" {
   class TelegramLinkService {
     +create_link_token(student: Student): str
     +bind(token: str, chat_id: str): TelegramLink
+    +get_link(student: Student): TelegramLink
+    +student_for_chat(chat_id: str): Student
+    +unlink(student: Student): None
+    +unlink_chat(chat_id: str): None
+    +set_notifications(student: Student, enabled: bool): None
   }
 
   class NotificationService {
     +notify(recipient: Student, type: NotificationType, text: str): None
     +notify_headmen(group_id: int, type: NotificationType, text: str): None
+    +deliver(notification_id: int): None
+    +retry_pending(limit: int = 100): None
   }
 
   interface INotificationChannel {
@@ -256,6 +324,10 @@ IReportExporter ..> CourseReport
 ScheduleImporter ..> Lesson : создаёт
 ScheduleImporter ..> Course : создаёт
 ScheduleImporter ..> ImportResult
+ScheduleImporter ..> MietScheduleClient
+MietScheduleClient ..> ScheduleCalendar
+AdministrationService ..> Group
+AdministrationService ..> Teacher
 
 TelegramLinkService ..> LinkToken
 TelegramLinkService ..> TelegramLink

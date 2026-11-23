@@ -56,4 +56,12 @@ opt староста отзывает замену
 end
 
 
+== Истечение срока ==
+note over API, DB : После 00:00 is_active(now) = false независимо от планировщика.
+T -> API : notify_expired(now) каждые 30 секунд
+API -> DB : атомарно заполнить expiry_notified_at\nтолько у истекших неотозванных замен без уведомления
+API -> NS : notify(delegate, DELEGATION_EXPIRED)
+NS -> DB : INSERT Notification (в той же транзакции)
+note over NS, DB : После commit доставка через TelegramChannel,\nнеудачные отправки повторяет обработчик очереди.
+
 @enduml

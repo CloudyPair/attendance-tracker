@@ -21,6 +21,17 @@ staticfiles/
 .coverage.*
 htmlcov/
 coverage.xml
+coverage.json
+test-results*.xml
+
+# Локальные учебные материалы и инструкции для агентов
+docs/
+kpo_project.md
+CLAUDE.md
+AGENTS.md
+.claude/
+.codex/
+.agents/
 
 .idea/
 .vscode/*

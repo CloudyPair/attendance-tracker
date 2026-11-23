@@ -1,0 +1,3 @@
+{% extends 'attendance/base.html' %}
+{% block title %}Страница не найдена{% endblock %}
+{% block content %}<div class="panel empty-state"><h1>Страница не найдена</h1><p>Проверьте адрес или вернитесь в журнал.</p><a class="button secondary" href="{% url 'attendance:lessons' %}">К занятиям</a></div>{% endblock %}
